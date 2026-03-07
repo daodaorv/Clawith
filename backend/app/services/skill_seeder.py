@@ -548,6 +548,16 @@ Plan would be:
         "folder_name": "content-research-writer",
         "files": [],  # populated at runtime
     },
+    # ─── MCP Tool Installer (mandatory default) ──────────────
+    {
+        "name": "MCP Tool Installer",
+        "description": "Guide users through discovering, configuring, and installing MCP tools directly in chat — no Settings page required",
+        "category": "development",
+        "icon": "🔌",
+        "folder_name": "mcp-installer",
+        "is_default": True,
+        "files": [],  # populated at runtime from agent_template/skills/MCP_INSTALLER.md
+    },
 ]
 
 
@@ -557,6 +567,7 @@ async def seed_skills():
     from pathlib import Path as _Path
 
     _files_dir = _Path(__file__).parent / "skill_creator_files"
+    _template_skills_dir = _Path(__file__).parent.parent.parent / "agent_template" / "skills"
 
     # Populate skill-creator files at runtime
     for s in BUILTIN_SKILLS:
@@ -567,6 +578,12 @@ async def seed_skills():
             crw_file = _files_dir / "content_research_writer__SKILL.md"
             if crw_file.exists():
                 s["files"] = [{"path": "SKILL.md", "content": crw_file.read_text(encoding="utf-8")}]
+        elif s["folder_name"] == "mcp-installer" and not s["files"]:
+            mcp_file = _template_skills_dir / "MCP_INSTALLER.md"
+            if mcp_file.exists():
+                s["files"] = [{"path": "SKILL.md", "content": mcp_file.read_text(encoding="utf-8")}]
+            else:
+                print("[SkillSeeder] WARNING: MCP_INSTALLER.md not found in agent_template/skills/")
 
     async with async_session() as db:
         for skill_data in BUILTIN_SKILLS:
@@ -610,3 +627,54 @@ async def seed_skills():
                 print(f"[SkillSeeder] Created skill: {skill_data['name']}")
         await db.commit()
         print("[SkillSeeder] Skills seeded")
+
+
+async def push_default_skills_to_existing_agents():
+    """Deploy all is_default skills into the workspace of every existing agent that is missing them.
+    
+    Called at startup after seed_skills() so existing agents automatically receive new default skills
+    like MCP_INSTALLER without requiring manual re-creation.
+    """
+    from pathlib import Path
+    from app.models.agent import Agent
+    from app.models.skill import Skill, SkillFile
+    from sqlalchemy.orm import selectinload
+    from app.services.agent_manager import agent_manager
+
+    async with async_session() as db:
+        # Load all is_default skills with their files
+        default_skills_r = await db.execute(
+            select(Skill).where(Skill.is_default == True).options(selectinload(Skill.files))
+        )
+        default_skills = default_skills_r.scalars().all()
+        if not default_skills:
+            return
+
+        # Load all agents
+        agents_r = await db.execute(select(Agent))
+        agents = agents_r.scalars().all()
+
+        pushed = 0
+        for agent in agents:
+            agent_dir = agent_manager._agent_dir(agent.id)
+            skills_dir = agent_dir / "skills"
+            for skill in default_skills:
+                if not skill.files:
+                    continue
+                skill_folder = skills_dir / skill.folder_name
+                skill_md = skill_folder / "SKILL.md"
+                if skill_md.exists():
+                    continue  # already present
+                # Write the skill files
+                skill_folder.mkdir(parents=True, exist_ok=True)
+                for sf in skill.files:
+                    fp = (skill_folder / sf.path).resolve()
+                    fp.parent.mkdir(parents=True, exist_ok=True)
+                    fp.write_text(sf.content, encoding="utf-8")
+                pushed += 1
+                print(f"[SkillSeeder] Pushed '{skill.name}' to agent {agent.id}")
+
+        if pushed:
+            print(f"[SkillSeeder] Pushed {pushed} skill installations to existing agents")
+        else:
+            print("[SkillSeeder] All existing agents already have default skills")

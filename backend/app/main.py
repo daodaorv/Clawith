@@ -107,8 +107,9 @@ async def lifespan(app: FastAPI):
 
         await seed_builtin_tools()
         await seed_agent_templates()
-        from app.services.skill_seeder import seed_skills
+        from app.services.skill_seeder import seed_skills, push_default_skills_to_existing_agents
         await seed_skills()
+        await push_default_skills_to_existing_agents()
         from app.services.agent_seeder import seed_default_agents
         await seed_default_agents()
     except Exception as e:
