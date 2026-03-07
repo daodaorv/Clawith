@@ -540,7 +540,7 @@
       "step2": "In the app page, left sidebar → Add App Capabilities (添加应用能力) → click Add (添加) next to Bot (机器人)",
       "step3": "Left sidebar → Credentials & Basic Info (凭证与基础信息) → copy App ID and App Secret",
       "step4": "Paste App ID and App Secret above → click Save Config → copy the Webhook URL that appears",
-      "step5": "Left sidebar → Event Subscriptions (事件订阅) → toggle Enable Events ON → paste the Webhook URL into the Request URL field → it will verify automatically → click Add Event → search for im.message.receive_v1 → add it → Save",
+      "step5": "Left sidebar → Events & Callbacks (事件与回调) → Event Config tab → Edit Subscription Mode → select 'Send events to developer server' → paste Webhook URL into the Request URL field → Save (auto-verifies) → click Add Event → search and add im.message.receive_v1 → Save",
       "step6": "Left sidebar → Permissions & Scopes → click 'Bulk Import/Export Permissions' → paste the permission JSON below → confirm import",
       "step7": "Left sidebar → App Release (版本管理与发布) → Create Version → fill in description → click Release for Review → for internal apps, you can approve it yourself in the admin console",
       "step8": "After publishing, invite the bot to a Feishu group or have users add it as a direct contact to start chatting",
