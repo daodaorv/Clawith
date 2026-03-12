@@ -35,6 +35,7 @@ COPY . .
 
 RUN useradd --create-home clawith && \
     mkdir -p /data/agents && \
+    chmod +x /app/entrypoint.sh && \
     chown -R clawith:clawith /app /data
 
 # Note: USER is removed to allow entrypoint.sh to fix permissions of mounted volumes
