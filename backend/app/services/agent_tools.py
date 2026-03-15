@@ -2082,7 +2082,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
             # ── Shortcut: if caller provided user_id or open_id directly ──
             if (direct_user_id or direct_open_id) and not member_name:
                 config_result = await db.execute(
-                    select(ChannelConfig).where(ChannelConfig.agent_id == agent_id)
+                    select(ChannelConfig).where(ChannelConfig.agent_id == agent_id, ChannelConfig.channel_type == "feishu")
                 )
                 config = config_result.scalar_one_or_none()
                 if not config:
@@ -2151,7 +2151,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                     _found_id_type = "open_id"
                 if _found_id:
                     config_result = await db.execute(
-                        select(ChannelConfig).where(ChannelConfig.agent_id == agent_id)
+                        select(ChannelConfig).where(ChannelConfig.agent_id == agent_id, ChannelConfig.channel_type == "feishu")
                     )
                     config = config_result.scalar_one_or_none()
                     if not config:
@@ -2179,7 +2179,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
 
             # Get the agent's Feishu bot credentials
             config_result = await db.execute(
-                select(ChannelConfig).where(ChannelConfig.agent_id == agent_id)
+                select(ChannelConfig).where(ChannelConfig.agent_id == agent_id, ChannelConfig.channel_type == "feishu")
             )
             config = config_result.scalar_one_or_none()
             if not config:
