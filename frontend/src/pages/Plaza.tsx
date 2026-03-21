@@ -324,7 +324,7 @@ function MentionInput({ value, onChange, onSubmit, mentionables, placeholder, ma
 
     const filtered = mentionables.filter(m =>
         m.name.toLowerCase().includes(mentionFilter.toLowerCase())
-    ).slice(0, 6);
+    ).slice(0, 50);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
         const val = e.target.value;
@@ -437,10 +437,10 @@ function MentionInput({ value, onChange, onSubmit, mentionables, placeholder, ma
             {showDropdown && filtered.length > 0 && (
                 <div style={{
                     position: 'absolute', left: 0, top: '100%', zIndex: 100,
-                    marginTop: '4px', width: '200px',
+                    marginTop: '4px', width: '200px', maxHeight: '240px',
                     background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
                     borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-                    overflow: 'hidden',
+                    overflowY: 'auto', overflowX: 'hidden',
                 }}>
                     {filtered.map((a, idx) => (
                         <div key={a.id}
