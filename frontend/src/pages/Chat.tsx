@@ -78,6 +78,8 @@ export default function Chat() {
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Ref to the chat textarea for direct DOM height manipulation
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const pendingToolCalls = useRef<ToolCall[]>([]);
     const streamContent = useRef('');
     const thinkingContent = useRef('');
@@ -368,10 +370,16 @@ export default function Chat() {
         wsRef.current.send(JSON.stringify({ content: contentForLLM, display_content: userMsg, file_name: attachedFile?.name || '' }));
         setInput('');
         setAttachedFile(null);
+        // Reset textarea height back to single-line after sending
+        requestAnimationFrame(() => {
+            if (textareaRef.current) {
+                textareaRef.current.style.height = 'auto';
+            }
+        });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        // Ctrl+Enter (or Cmd+Enter on Mac) to send; plain Enter inserts a newline
+        // Ctrl+Enter (or Cmd+Enter on Mac) triggers send; plain Enter inserts a newline
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing && !isWaiting && !streaming) {
             e.preventDefault();
             sendMessage();
@@ -379,16 +387,24 @@ export default function Chat() {
     };
 
     /**
-     * Auto-resize the textarea height to fit content, with a max of 5 visible rows.
-     * Called on every input change so the box grows/shrinks naturally.
+     * Resize the textarea to fit its content, capping at ~5 lines (130 px).
+     * Must be called AFTER React has committed the new value to the DOM,
+     * so we use the ref rather than the event target for reliability.
      */
+    const resizeTextarea = () => {
+        const el = textareaRef.current;
+        if (!el) return;
+        // Reset to 'auto' so the element can shrink when text is deleted
+        el.style.height = 'auto';
+        // scrollHeight gives the natural height needed for the full content
+        el.style.height = Math.min(el.scrollHeight, 130) + 'px';
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInput(e.target.value);
-        const el = e.target;
-        // Reset height first so shrinking works correctly
-        el.style.height = 'auto';
-        // Cap at ~5 lines (line-height ~22px * 5 + padding)
-        el.style.height = Math.min(el.scrollHeight, 130) + 'px';
+        // Resize after state update; requestAnimationFrame ensures the DOM reflects
+        // the new value before we measure scrollHeight.
+        requestAnimationFrame(resizeTextarea);
     };
 
     const hasLiveData = !!(liveState.desktop || liveState.browser || liveState.code);
@@ -585,6 +601,7 @@ export default function Chat() {
                         {uploading ? Icons.loader : Icons.clip}
                     </button>
                     <textarea
+                        ref={textareaRef}
                         className="chat-input"
                         value={input}
                         onChange={handleInputChange}
@@ -593,7 +610,9 @@ export default function Chat() {
                         disabled={!connected}
                         rows={1}
                         style={{
+                            // Disable manual resize handle; height is controlled by JS
                             resize: 'none',
+                            // Hide scrollbar — height is always exactly the content height
                             overflow: 'hidden',
                             lineHeight: '22px',
                             paddingTop: '8px',
