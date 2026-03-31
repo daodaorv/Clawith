@@ -139,9 +139,11 @@ class RegistrationService:
             is_verified = True
 
         # Create new identity
+        normalized_phone = re.sub(r"[\s\-\+]", "", phone) if phone else None
         identity = Identity(
             email=email,
-            phone=phone,
+            phone=normalized_phone,
+
             username=username,
             password_hash=hash_password(password) if password else None,
             is_platform_admin=is_platform_admin,
@@ -264,21 +266,29 @@ class RegistrationService:
         # (moved up)
         pass
 
+        # Step 2: Ensure Identity exists
         # Generate username from email or provider ID (fallback to open_id)
         effective_id = provider_user_id or user_info.get("open_id") or user_info.get("union_id") or uuid.uuid4().hex[:8]
         username = email.split("@")[0] if email else f"{provider_type}_{effective_id[:8]}"
 
+        identity = await self.find_or_create_identity(
+            db,
+            email=email,
+            phone=user_info.get("mobile") or user_info.get("phone"),
+            username=username,
+            password=effective_id, # Placeholder for SSO users
+        )
+
+
+        # Step 3: Create User linked to Identity
         user = await self.create_user_with_identity(
             db,
-            username=username,
-            email=email or f"{username}@{provider_type}.local",
-            password=effective_id,  # Placeholder for SSO users
+            identity=identity,
             display_name=user_info.get("name", username),
-            provider_type=provider_type,
-            provider_user_id=provider_user_id,
-            provider_data=user_info,
+            registration_source=provider_type,
             tenant_id=tenant_id,
         )
+
 
         return user, True
 

@@ -272,23 +272,16 @@ class ChannelUserService:
 
         email = email or f"{username}@{channel_type}.local"
 
-        # Step 1: Find or create global Identity
-        identity = None
-        if email:
-            from app.models.user import Identity
-            query = select(Identity).where(Identity.email == email)
-            id_result = await db.execute(query)
-            identity = id_result.scalar_one_or_none()
+        # Step 1: Find or create global Identity using unified registration service
+        from app.services.registration_service import registration_service
+        identity = await registration_service.find_or_create_identity(
+            db,
+            email=email,
+            phone=extra_info.get("mobile"),
+            username=username,
+            password=uuid.uuid4().hex,
+        )
 
-        if not identity:
-            identity = Identity(
-                email=email,
-                username=username,
-                password_hash=hash_password(uuid.uuid4().hex),
-                phone=extra_info.get("mobile"),
-            )
-            db.add(identity)
-            await db.flush()
 
         # Step 2: Create tenant-scoped User linked to Identity
         user = User(
@@ -381,17 +374,28 @@ async def get_platform_user_by_org_member(
 
     email = email or f"{username}@{channel_type}.local"
 
-    user = User(
-        username=username,
+    # Step 3: Create new User and link to OrgMember
+    from app.services.registration_service import registration_service
+    # Use unified find_or_create_identity with dual lookup (email/phone)
+    identity = await registration_service.find_or_create_identity(
+        db,
         email=email,
-        password_hash=hash_password(uuid.uuid4().hex),
+        phone=org_member.phone,
+        username=username,
+        password=uuid.uuid4().hex,
+    )
+
+
+    user = User(
+        identity_id=identity.id,
         display_name=name,
         avatar_url=org_member.avatar_url,
-        primary_mobile=org_member.phone,
         role="member",
         registration_source=channel_type,
         tenant_id=agent_tenant_id,
+        is_active=True,
     )
+
     db.add(user)
     await db.flush()
 

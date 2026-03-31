@@ -85,14 +85,14 @@ function DeptTree({ departments, parentId, selectedDept, onSelect, level }: {
                 <div key={d.id}>
                     <div
                         style={{
-                            padding: '5px 8px', 
-                            paddingLeft: `${8 + level * 16}px`, 
+                            padding: '5px 8px',
+                            paddingLeft: `${8 + level * 16}px`,
                             borderRadius: '4px',
-                            cursor: 'pointer', 
-                            fontSize: '13px', 
+                            cursor: 'pointer',
+                            fontSize: '13px',
                             marginBottom: '1px',
                             background: selectedDept === d.id ? 'rgba(224,238,238,0.12)' : 'transparent',
-                            display: 'flex', 
+                            display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center'
                         }}
@@ -332,11 +332,11 @@ function OrgTab({ tenant }: { tenant: any }) {
                     </div>
                     <div>
                         <label style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
-                            <input 
-                                type="checkbox" 
-                                checked={ssoEnabled} 
+                            <input
+                                type="checkbox"
+                                checked={ssoEnabled}
                                 onChange={handleToggle}
-                                style={{ opacity: 0, width: 0, height: 0 }} 
+                                style={{ opacity: 0, width: 0, height: 0 }}
                             />
                             <span style={{
                                 position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -523,10 +523,10 @@ function OrgTab({ tenant }: { tenant: any }) {
     };
 
     const IDP_TYPES = [
-        { type: 'feishu', name: 'Feishu', desc: 'Feishu / Lark Integration', icon: <img src="/feishu.png" width="20" height="20" alt="Feishu"/> },
-        { type: 'wecom', name: 'WeCom', desc: 'WeChat Work Integration', icon: <img src="/wecom.png" width="20" height="20" style={{ borderRadius: '4px' }} alt="WeCom"/> },
-        { type: 'dingtalk', name: 'DingTalk', desc: 'DingTalk App Integration', icon: <img src="/dingtalk.png" width="20" height="20" style={{ borderRadius: '4px' }} alt="DingTalk"/> },
-        { type: 'oauth2', name: 'OAuth2', desc: 'Generic OIDC Provider', icon: <div style={{width: 20, height: 20, background: 'var(--accent-primary)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700}}>O</div> }
+        { type: 'feishu', name: 'Feishu', desc: 'Feishu / Lark Integration', icon: <img src="/feishu.png" width="20" height="20" alt="Feishu" /> },
+        { type: 'wecom', name: 'WeCom', desc: 'WeChat Work Integration', icon: <img src="/wecom.png" width="20" height="20" style={{ borderRadius: '4px' }} alt="WeCom" /> },
+        { type: 'dingtalk', name: 'DingTalk', desc: 'DingTalk App Integration', icon: <img src="/dingtalk.png" width="20" height="20" style={{ borderRadius: '4px' }} alt="DingTalk" /> },
+        { type: 'oauth2', name: 'OAuth2', desc: 'Generic OIDC Provider', icon: <div style={{ width: 20, height: 20, background: 'var(--accent-primary)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700 }}>O</div> }
     ];
 
     const handleExpand = (type: string, existingProvider?: any) => {
@@ -537,7 +537,7 @@ function OrgTab({ tenant }: { tenant: any }) {
         setExpandedType(type);
         setEditingId(existingProvider ? existingProvider.id : null);
         setUseOAuth2Form(type === 'oauth2');
-        
+
         if (existingProvider) {
             setForm({ ...existingProvider, ...(type === 'oauth2' ? initOAuth2FromConfig(existingProvider.config) : {}) });
         } else {
@@ -580,8 +580,8 @@ function OrgTab({ tenant }: { tenant: any }) {
                                         {t('enterprise.org.feishuGuideText', 'Permission JSON (bulk import)')}
                                     </div>
                                     <div style={{ position: 'relative', background: '#282c34', borderRadius: '6px', padding: '12px', paddingRight: '40px', color: '#abb2bf', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                                        <button 
-                                            className="btn btn-ghost" 
+                                        <button
+                                            className="btn btn-ghost"
                                             style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '10px', color: '#abb2bf', padding: '4px 8px', background: 'rgba(255,255,255,0.1)', cursor: 'pointer', border: 'none', borderRadius: '4px' }}
                                             onClick={(e) => { e.preventDefault(); copyToClipboard(FEISHU_SYNC_PERM_JSON); e.currentTarget.textContent = 'Copied✓'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 2000); }}
                                         >
@@ -722,7 +722,7 @@ function OrgTab({ tenant }: { tenant: any }) {
             <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px dashed var(--border-subtle)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                     <div style={{ fontWeight: 500, fontSize: '14px' }}>{t('enterprise.org.orgBrowser', 'Organization Browser')}</div>
-                    
+
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                         {['feishu', 'dingtalk', 'wecom'].includes(p.provider_type) && (
                             <button className="btn btn-secondary btn-sm" style={{ fontSize: '12px' }} onClick={() => triggerSync(p.id)} disabled={!!syncing}>
@@ -789,10 +789,10 @@ function OrgTab({ tenant }: { tenant: any }) {
                     {IDP_TYPES.map((idp, index) => {
                         const existingProvider = providers.find((p: any) => p.provider_type === idp.type);
                         const isExpanded = expandedType === idp.type;
-                        
+
                         return (
                             <div key={idp.type} style={{ borderBottom: index < IDP_TYPES.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-                                <div 
+                                <div
                                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', cursor: 'pointer', background: isExpanded ? 'var(--bg-secondary)' : 'transparent', transition: 'background 0.2s' }}
                                     onClick={() => handleExpand(idp.type, existingProvider)}
                                 >
@@ -835,8 +835,6 @@ function OrgTab({ tenant }: { tenant: any }) {
                                                 t={t}
                                             />
                                         )}
-
-
                                         {existingProvider && renderOrgBrowser(existingProvider)}
                                     </div>
                                 )}
@@ -2387,7 +2385,7 @@ export default function EnterpriseSettings() {
                                     <input
                                         className="form-input"
                                         value={systemEmailConfig.SYSTEM_EMAIL_FROM_ADDRESS}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_EMAIL_FROM_ADDRESS: e.target.value})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_EMAIL_FROM_ADDRESS: e.target.value })}
                                         placeholder="noreply@yourcompany.com"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2399,7 +2397,7 @@ export default function EnterpriseSettings() {
                                     <input
                                         className="form-input"
                                         value={systemEmailConfig.SYSTEM_EMAIL_FROM_NAME}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_EMAIL_FROM_NAME: e.target.value})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_EMAIL_FROM_NAME: e.target.value })}
                                         placeholder="Clawith"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2411,7 +2409,7 @@ export default function EnterpriseSettings() {
                                     <input
                                         className="form-input"
                                         value={systemEmailConfig.SYSTEM_SMTP_HOST}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_HOST: e.target.value})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_HOST: e.target.value })}
                                         placeholder="smtp.gmail.com"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2424,7 +2422,7 @@ export default function EnterpriseSettings() {
                                         className="form-input"
                                         type="number"
                                         value={systemEmailConfig.SYSTEM_SMTP_PORT}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_PORT: parseInt(e.target.value) || 465})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_PORT: parseInt(e.target.value) || 465 })}
                                         placeholder="465"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2436,7 +2434,7 @@ export default function EnterpriseSettings() {
                                     <input
                                         className="form-input"
                                         value={systemEmailConfig.SYSTEM_SMTP_USERNAME}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_USERNAME: e.target.value})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_USERNAME: e.target.value })}
                                         placeholder="your-email@gmail.com"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2449,7 +2447,7 @@ export default function EnterpriseSettings() {
                                         className="form-input"
                                         type="password"
                                         value={systemEmailConfig.SYSTEM_SMTP_PASSWORD}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_PASSWORD: e.target.value})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_PASSWORD: e.target.value })}
                                         placeholder="••••••••"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2462,7 +2460,7 @@ export default function EnterpriseSettings() {
                                         className="form-input"
                                         type="number"
                                         value={systemEmailConfig.SYSTEM_SMTP_TIMEOUT_SECONDS}
-                                        onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_TIMEOUT_SECONDS: parseInt(e.target.value) || 15})}
+                                        onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_TIMEOUT_SECONDS: parseInt(e.target.value) || 15 })}
                                         placeholder="15"
                                         style={{ fontSize: '13px' }}
                                     />
@@ -2472,7 +2470,7 @@ export default function EnterpriseSettings() {
                                         <input
                                             type="checkbox"
                                             checked={systemEmailConfig.SYSTEM_SMTP_SSL}
-                                            onChange={e => setSystemEmailConfig({...systemEmailConfig, SYSTEM_SMTP_SSL: e.target.checked})}
+                                            onChange={e => setSystemEmailConfig({ ...systemEmailConfig, SYSTEM_SMTP_SSL: e.target.checked })}
                                             style={{ width: '16px', height: '16px' }}
                                         />
                                         <span style={{ fontSize: '13px' }}>

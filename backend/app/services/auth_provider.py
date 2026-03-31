@@ -222,8 +222,9 @@ class BaseAuthProvider(ABC):
             email=user_info.email,
             phone=user_info.mobile,
             username=user_info.email.split("@")[0] if user_info.email else None,
-            display_name=user_info.name
+            password=effective_id,
         )
+
 
         # 2. Prepare user fields
         effective_id = user_info.provider_user_id or user_info.provider_union_id or "unknown"
@@ -244,16 +245,13 @@ class BaseAuthProvider(ABC):
         # 3. Create TenantUser record
         user = User(
             identity_id=identity.id,
-            username=username,
-            email=user_info.email or f"{username}@{self.provider_type}.local",
             display_name=user_info.name or username,
             avatar_url=user_info.avatar_url,
-            primary_mobile=user_info.mobile,
             registration_source=self.provider_type,
             tenant_id=tenant_id,
             is_active=True,
-            email_verified=True if user_info.email else False,
         )
+
 
         # Set legacy fields if needed
         await self._set_legacy_user_fields(user, user_info)

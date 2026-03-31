@@ -18,16 +18,25 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
+import re
 
 from loguru import logger
-
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.database import async_session
 from app.models.task import Task
-from app.config import get_settings
+from app.models.agent import Agent as AgentModel
+from app.models.org import AgentRelationship, OrgMember, AgentAgentRelationship
+from app.models.audit import ChatMessage, AuditLog
+from app.models.chat_session import ChatSession
+from app.models.channel_config import ChannelConfig
+from app.models.user import User as UserModel
 from app.services.auth_registry import auth_provider_registry
+from app.services.channel_session import find_or_create_channel_session
+from app.services.channel_user_service import get_platform_user_by_org_member
+from app.config import get_settings
+
 
 _settings = get_settings()
 WORKSPACE_ROOT = Path(_settings.AGENT_DATA_DIR)
@@ -1535,9 +1544,9 @@ async def ensure_workspace(agent_id: uuid.UUID, tenant_id: str | None = None) ->
     if not (ws / "soul.md").exists():
         # Try to load from DB
         try:
-            from app.models.agent import Agent
             async with async_session() as db:
-                r = await db.execute(select(Agent).where(Agent.id == agent_id))
+
+                r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
                 agent = r.scalar_one_or_none()
                 if agent and agent.role_description:
                     (ws / "soul.md").write_text(
@@ -1600,9 +1609,10 @@ _TOOL_AUTONOMY_MAP = {
 async def _get_agent_tenant_id(agent_id: uuid.UUID) -> str | None:
     """Get the agent tenant ID for tenant-scoped shared paths."""
     try:
-        from app.models.agent import Agent
         async with async_session() as db:
-            r = await db.execute(select(Agent.tenant_id).where(Agent.id == agent_id))
+
+            r = await db.execute(select(AgentModel.tenant_id).where(AgentModel.id == agent_id))
+
             tenant_id = r.scalar_one_or_none()
             if tenant_id:
                 return str(tenant_id)
@@ -2998,12 +3008,11 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
         return "❌ Please provide member_name, user_id, or open_id"
 
     try:
-        from app.models.org import AgentRelationship, OrgMember
-        from app.models.channel_config import ChannelConfig
         from app.services.feishu_service import feishu_service
         from sqlalchemy.orm import selectinload
 
         async with async_session() as db:
+
             # ── Shortcut: if caller provided user_id or open_id directly ──
             config_result = await db.execute(
                 select(ChannelConfig).where(ChannelConfig.agent_id == agent_id, ChannelConfig.channel_type == "feishu")
@@ -3086,11 +3095,8 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
             async def _save_outgoing_to_feishu_session(open_id: str):
                 """Save the outgoing message to the Feishu P2P chat session."""
                 try:
-                    from app.models.audit import ChatMessage
-                    from app.models.agent import Agent as AgentModel
-                    from app.services.channel_session import find_or_create_channel_session
                     from datetime import datetime as _dt, timezone as _tz
-                    from app.services.channel_user_service import get_platform_user_by_org_member
+
 
                     agent_r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
                     agent_obj = agent_r.scalar_one_or_none()
@@ -3249,10 +3255,8 @@ async def _send_dingtalk_message(
     target_member: "OrgMember",
 ) -> str:
     """Send message via DingTalk channel using Open API."""
-    import json as _j
-
-    from app.models.channel_config import ChannelConfig
     from app.services.dingtalk_service import send_dingtalk_message
+
 
     try:
         async with async_session() as db:
@@ -3291,19 +3295,19 @@ async def _send_dingtalk_message(
             )
 
             if result.get("errcode") == 0:
-                # Save proactive message to session so it appears in UI
                 try:
-                    from app.services.channel_session import find_or_create_channel_session
-                    from app.models.audit import ChatMessage
-                    from datetime import datetime, timezone
-                    from app.services.channel_user_service import get_platform_user_by_org_member
+                    # Get agent tenant context
+                    agent_r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
+                    agent_obj = agent_r.scalar_one_or_none()
+
 
                     # Get or create platform user from OrgMember (unified logic)
                     platform_user = await get_platform_user_by_org_member(
                         db=db,
                         org_member=target_member,
-                        agent_tenant_id=agent.tenant_id if agent else None,
+                        agent_tenant_id=agent_obj.tenant_id if agent_obj else None,
                     )
+
 
                     conv_id = f"dingtalk_p2p_{user_id}"
                     # 2. Get/Create session
@@ -3347,11 +3351,8 @@ async def _send_wecom_message(
     target_member: "OrgMember",
 ) -> str:
     """Send message via WeCom channel using Open API."""
-    import json as _j
-
-    from app.models.channel_config import ChannelConfig
-    from app.models.agent import Agent as AgentModel
     from app.services.wecom_service import send_wecom_message
+
 
     try:
         async with async_session() as db:
@@ -3387,14 +3388,11 @@ async def _send_wecom_message(
             if result.get("errcode") == 0:
                 # Save proactive message to session so it appears in UI
                 try:
-                    from app.services.channel_session import find_or_create_channel_session
-                    from app.models.audit import ChatMessage
-                    from datetime import datetime, timezone
-                    from app.services.channel_user_service import get_platform_user_by_org_member
 
                     # Get agent tenant context
                     agent_r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
                     agent = agent_r.scalar_one_or_none()
+
 
                     # Get or create platform user from OrgMember (unified logic)
                     platform_user = await get_platform_user_by_org_member(
@@ -3445,11 +3443,8 @@ async def _send_web_message(agent_id: uuid.UUID, args: dict) -> str:
         return "❌ Please provide recipient username and message content"
 
     try:
-        from app.models.user import User as UserModel
-        from app.models.agent import Agent as AgentModel
-        from app.models.audit import ChatMessage
-        from app.models.chat_session import ChatSession
         from datetime import datetime as _dt, timezone as _tz
+
 
         async with async_session() as db:
             # 0. Get agent's tenant_id for scoping
@@ -3459,7 +3454,7 @@ async def _send_web_message(agent_id: uuid.UUID, args: dict) -> str:
                 return "❌ Agent not found"
 
             # 1. Look up target user by username or display_name within tenant
-            from sqlalchemy import or_
+
             query = select(UserModel).where(
                 or_(
                     UserModel.username == username,
@@ -3569,41 +3564,41 @@ async def _send_file_to_agent(from_agent_id: uuid.UUID, ws: Path, args: dict) ->
         return f"❌ File too large ({size_mb:.1f} MB). Maximum allowed is 50 MB."
 
     try:
-        from app.models.agent import Agent
         from app.services.activity_logger import log_activity
         import shutil
 
         async with async_session() as db:
-            src_result = await db.execute(select(Agent).where(Agent.id == from_agent_id))
+            src_result = await db.execute(select(AgentModel).where(AgentModel.id == from_agent_id))
             source_agent = src_result.scalar_one_or_none()
             source_name = source_agent.name if source_agent else "Unknown agent"
             source_tenant_id = source_agent.tenant_id if source_agent else None
 
             # Build base filter: same tenant + not self
-            base_filter = [Agent.id != from_agent_id]
+            base_filter = [AgentModel.id != from_agent_id]
             if source_tenant_id:
-                base_filter.append(Agent.tenant_id == source_tenant_id)
+                base_filter.append(AgentModel.tenant_id == source_tenant_id)
 
             # Try exact name match first, then fuzzy
             target_agent = None
             exact_result = await db.execute(
-                select(Agent).where(Agent.name == agent_name, *base_filter)
+                select(AgentModel).where(AgentModel.name == agent_name, *base_filter)
             )
             target_agent = exact_result.scalars().first()
             if not target_agent:
                 # Sanitize SQL wildcards in user input
-                safe_name = agent_name.replace("%", "").replace("_", "\_")
+                safe_name = agent_name.replace("%", "").replace("_", r"\_")
                 fuzzy_result = await db.execute(
-                    select(Agent).where(Agent.name.ilike(f"%{safe_name}%"), *base_filter)
+                    select(AgentModel).where(AgentModel.name.ilike(f"%{safe_name}%"), *base_filter)
                 )
                 target_agent = fuzzy_result.scalars().first()
+
             if not target_agent:
                 # Only show agents from relationships, not all agents
                 from app.models.org import AgentAgentRelationship
                 rel_r = await db.execute(
-                    select(Agent.name).join(
+                    select(AgentModel.name).join(
                         AgentAgentRelationship,
-                        (AgentAgentRelationship.target_agent_id == Agent.id) & (AgentAgentRelationship.agent_id == from_agent_id)
+                        (AgentAgentRelationship.target_agent_id == AgentModel.id) & (AgentAgentRelationship.agent_id == from_agent_id)
                     )
                 )
                 rel_names = [n for (n,) in rel_r.all()]
@@ -3613,7 +3608,6 @@ async def _send_file_to_agent(from_agent_id: uuid.UUID, ws: Path, args: dict) ->
                 return f"⚠️ {target_agent.name} is currently unavailable — their service period has ended. Please contact the platform administrator."
 
             # Enforce relationship: only allow file transfer with agents in relationships
-            from app.models.org import AgentAgentRelationship
             rel_check = await db.execute(
                 select(AgentAgentRelationship.id).where(
                     ((AgentAgentRelationship.agent_id == from_agent_id) & (AgentAgentRelationship.target_agent_id == target_agent.id))
@@ -3725,47 +3719,45 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
         return "❌ Please provide target agent name and message content"
 
     try:
-        from app.models.agent import Agent
-        from app.models.audit import ChatMessage
-        from app.models.chat_session import ChatSession
         from app.models.participant import Participant
         from datetime import datetime, timezone
 
         async with async_session() as db:
             # Look up source agent
-            src_result = await db.execute(select(Agent).where(Agent.id == from_agent_id))
+            src_result = await db.execute(select(AgentModel).where(AgentModel.id == from_agent_id))
+
             source_agent = src_result.scalar_one_or_none()
             source_name = source_agent.name if source_agent else "Unknown agent"
             source_tenant_id = source_agent.tenant_id if source_agent else None
 
             # Build base filter: same tenant + not self
-            base_filter = [Agent.id != from_agent_id]
+            base_filter = [AgentModel.id != from_agent_id]
             if source_tenant_id:
-                base_filter.append(Agent.tenant_id == source_tenant_id)
+                base_filter.append(AgentModel.tenant_id == source_tenant_id)
 
             # Find target agent by name — exact match first, then fuzzy
             target = None
             exact_result = await db.execute(
-                select(Agent).where(Agent.name == agent_name, *base_filter)
+                select(AgentModel).where(AgentModel.name == agent_name, *base_filter)
             )
             target = exact_result.scalars().first()
             if not target:
-                safe_name = agent_name.replace("%", "").replace("_", "\_")
+                safe_name = agent_name.replace("%", "").replace("_", r"\_")
                 fuzzy_result = await db.execute(
-                    select(Agent).where(Agent.name.ilike(f"%{safe_name}%"), *base_filter)
+                    select(AgentModel).where(AgentModel.name.ilike(f"%{safe_name}%"), *base_filter)
                 )
                 target = fuzzy_result.scalars().first()
             if not target:
                 # Only show agents from relationships, not all agents
-                from app.models.org import AgentAgentRelationship
                 rel_r = await db.execute(
-                    select(Agent.name).join(
+                    select(AgentModel.name).join(
                         AgentAgentRelationship,
-                        (AgentAgentRelationship.target_agent_id == Agent.id) & (AgentAgentRelationship.agent_id == from_agent_id)
+                        (AgentAgentRelationship.target_agent_id == AgentModel.id) & (AgentAgentRelationship.agent_id == from_agent_id)
                     )
                 )
                 rel_names = [n for (n,) in rel_r.all()]
                 return f"❌ No agent found matching '{agent_name}'. Your connected colleagues: {', '.join(rel_names) if rel_names else 'none — ask your administrator to set up relationships'}"
+
 
             # Check if target agent has expired
             if target.is_expired or (target.expires_at and datetime.now(timezone.utc) >= target.expires_at):

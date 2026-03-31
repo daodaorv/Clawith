@@ -179,16 +179,27 @@ class FeishuService:
                 import uuid
                 username = f"{username}_{uuid.uuid4().hex[:6]}"
 
-            user = User(
-                username=username,
+            # Step 1: Find or create global Identity using unified registration service
+            from app.services.registration_service import registration_service
+            # No phone available in this specific Feishu login block, but it handles email/username matching
+            identity = await registration_service.find_or_create_identity(
+                db,
                 email=email,
-                password_hash=hash_password(open_id),
+                phone=user_info.get("mobile"),
+                username=username,
+                password=open_id,
+            )
+
+            # Step 2: Create tenant-scoped User linked to Identity
+            user = User(
+                identity_id=identity.id,
                 display_name=fs_name or username,
                 avatar_url=fs_avatar or None,
-                feishu_user_id=user_id,
                 registration_source="feishu",
                 tenant_id=tenant_id,
+                is_active=True,
             )
+
             db.add(user)
             await db.flush()
 
