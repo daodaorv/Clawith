@@ -557,69 +557,142 @@ BUILTIN_TOOLS = [
         },
     },
     {
-        "name": "generate_image",
-        "display_name": "Generate Image",
-        "description": "Generate an image from a text description using AI image generation models. The image will be saved to the agent's workspace. Supports multiple providers: SiliconFlow (FLUX, China-friendly), OpenAI (GPT Image), Google (Gemini Native Image).",
+        "name": "generate_image_siliconflow",
+        "display_name": "Generate Image (SiliconFlow)",
+        "description": "Generate an image via SiliconFlow FLUX models. China-friendly and fast.",
         "category": "media",
         "icon": "🎨",
         "is_default": False,
         "parameters_schema": {
             "type": "object",
             "properties": {
-                "prompt": {
-                    "type": "string",
-                    "description": "Detailed description of the image to generate. Use English for best results. Include style, subject, lighting, composition details.",
-                },
-                "size": {
-                    "type": "string",
-                    "description": "Image size. Default: 1024x1024. Options vary by provider: 1024x1024, 1024x768, 768x1024, 1536x1024, 1024x1536",
-                },
-                "save_path": {
-                    "type": "string",
-                    "description": "Where to save in workspace, e.g. workspace/images/sunset.png. Default: auto-generated in workspace/images/",
-                },
+                "prompt": {"type": "string", "description": "Detailed image description."},
+                "size": {"type": "string", "description": "Image size (e.g. 1024x1024, 1024x768). Default 1024x1024."},
+                "save_path": {"type": "string", "description": "Save path in workspace. Default: auto."},
             },
             "required": ["prompt"],
         },
         "config": {
-            "provider": "google",
-            "model": "",
+            "model": "black-forest-labs/FLUX.1-schnell",
             "api_key": "",
             "base_url": "",
         },
         "config_schema": {
             "fields": [
                 {
-                    "key": "provider",
-                    "label": "Provider",
-                    "type": "select",
-                    "options": [
-                        {"value": "siliconflow", "label": "SiliconFlow"},
-                        {"value": "openai", "label": "OpenAI"},
-                        {"value": "google", "label": "Google"},
-                    ],
-                    "default": "google",
-                },
-                {
                     "key": "model",
                     "label": "Model",
                     "type": "text",
-                    "default": "",
-                    "placeholder": "e.g. black-forest-labs/FLUX.1-schnell, gpt-image-1, gemini-2.5-flash-image",
+                    "default": "black-forest-labs/FLUX.1-schnell",
+                    "placeholder": "e.g. black-forest-labs/FLUX.1-schnell",
                 },
                 {
                     "key": "api_key",
                     "label": "API Key",
                     "type": "password",
                     "default": "",
-                    "placeholder": "Provider API key (SiliconFlow / OpenAI / Google)",
+                    "placeholder": "SiliconFlow API Key",
                 },
                 {
                     "key": "base_url",
                     "label": "Base URL (optional)",
                     "type": "text",
                     "default": "",
-                    "placeholder": "Custom API endpoint. Leave empty for default.",
+                    "placeholder": "Default: https://api.siliconflow.cn/v1",
+                },
+            ]
+        },
+    },
+    {
+        "name": "generate_image_openai",
+        "display_name": "Generate Image (OpenAI)",
+        "description": "Generate an image via OpenAI DALL-E models.",
+        "category": "media",
+        "icon": "🎨",
+        "is_default": False,
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Detailed image description."},
+                "size": {"type": "string", "description": "Image size (e.g. 1024x1024). Default 1024x1024."},
+                "save_path": {"type": "string", "description": "Save path in workspace. Default: auto."},
+            },
+            "required": ["prompt"],
+        },
+        "config": {
+            "model": "dall-e-3",
+            "api_key": "",
+            "base_url": "",
+        },
+        "config_schema": {
+            "fields": [
+                {
+                    "key": "model",
+                    "label": "Model",
+                    "type": "text",
+                    "default": "dall-e-3",
+                    "placeholder": "e.g. dall-e-3 or dall-e-2",
+                },
+                {
+                    "key": "api_key",
+                    "label": "API Key",
+                    "type": "password",
+                    "default": "",
+                    "placeholder": "OpenAI API Key",
+                },
+                {
+                    "key": "base_url",
+                    "label": "Base URL (optional)",
+                    "type": "text",
+                    "default": "",
+                    "placeholder": "Default: https://api.openai.com/v1",
+                },
+            ]
+        },
+    },
+    {
+        "name": "generate_image_google",
+        "display_name": "Generate Image (Google/Vertex)",
+        "description": "Generate an image via Google Gemini Image (Nano Banana) or Vertex AI.",
+        "category": "media",
+        "icon": "🎨",
+        "is_default": False,
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Detailed image description."},
+                "size": {"type": "string", "description": "Image size (e.g. 1024x1024). Default 1024x1024."},
+                "save_path": {"type": "string", "description": "Save path in workspace. Default: auto."},
+            },
+            "required": ["prompt"],
+        },
+        "config": {
+            "model": "gemini-2.5-flash-image",
+            "api_key": "",
+            "base_url": "",
+        },
+        "config_schema": {
+            "fields": [
+                {
+                    "key": "model",
+                    "label": "Model",
+                    "type": "text",
+                    "default": "gemini-2.5-flash-image",
+                    "placeholder": "e.g. gemini-2.5-flash-image",
+                },
+                {
+                    "key": "api_key",
+                    "label": "API Key",
+                    "type": "password",
+                    "default": "",
+                    "placeholder": "Google AI Studio or Vertex API Key",
+                },
+                {
+                    "key": "base_url",
+                    "label": "Base URL (optional)",
+                    "type": "text",
+                    "default": "",
+                    "placeholder": "Can be Vertex API URL: https://aiplatform.googleapis.com/...",
                 },
             ]
         },

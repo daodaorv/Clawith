@@ -606,16 +606,14 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "generate_image",
-            "description": "Generate an image from a text description using AI. "
-                           "The generated image is saved to your workspace. "
-                           "Use this when the user asks to create, draw, design, or generate any image, illustration, diagram, or visual content.",
+            "name": "generate_image_siliconflow",
+            "description": "Generate an image via SiliconFlow (FLUX). Save to workspace. Fast and China-friendly.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Detailed description of the image to generate. Write in English for best quality. Include style, subject, lighting, composition details.",
+                        "description": "Detailed image description in English.",
                     },
                     "size": {
                         "type": "string",
@@ -623,7 +621,57 @@ AGENT_TOOLS = [
                     },
                     "save_path": {
                         "type": "string",
-                        "description": "Workspace path to save the image, e.g. workspace/images/sunset.png. Default: auto-generated.",
+                        "description": "Workspace path to save the image (e.g. workspace/images/sunset.png).",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image_openai",
+            "description": "Generate an image via OpenAI. Save to workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed image description in English.",
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Image size. Default: 1024x1024.",
+                    },
+                    "save_path": {
+                        "type": "string",
+                        "description": "Workspace path to save the image.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image_google",
+            "description": "Generate an image via Google Gemini Image (Nano Banana) or Vertex AI. Save to workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed image description in English.",
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Image size. Default: 1024x1024.",
+                    },
+                    "save_path": {
+                        "type": "string",
+                        "description": "Workspace path to save the image.",
                     },
                 },
                 "required": ["prompt"],
@@ -1814,8 +1862,12 @@ async def execute_tool(
             result = await _execute_code(agent_id, ws, arguments)
         elif tool_name == "upload_image":
             result = await _upload_image(agent_id, ws, arguments)
-        elif tool_name == "generate_image":
-            result = await _generate_image(agent_id, ws, arguments)
+        elif tool_name == "generate_image_siliconflow":
+            result = await _generate_image(agent_id, ws, arguments, "siliconflow")
+        elif tool_name == "generate_image_openai":
+            result = await _generate_image(agent_id, ws, arguments, "openai")
+        elif tool_name == "generate_image_google":
+            result = await _generate_image(agent_id, ws, arguments, "google")
         elif tool_name == "discover_resources":
             result = await _discover_resources(arguments)
         elif tool_name == "import_mcp_server":
@@ -5022,7 +5074,7 @@ async def _upload_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str:
 
 # ─── Image Generation (Multi-Provider) ────────────────────────────────────────
 
-async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str:
+async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict, provider: str) -> str:
     """Generate an image using the configured provider and save to workspace.
 
     Supported providers:
@@ -5033,6 +5085,7 @@ async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str
     The tool config is resolved via the standard _get_tool_config() hierarchy:
     global tool config (admin-set) -> per-agent tool config override.
     """
+    import httpx
     from datetime import datetime
 
     prompt = arguments.get("prompt")
@@ -5043,8 +5096,8 @@ async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str
     save_path = arguments.get("save_path", "")
 
     # Load tool config (global -> per-agent override)
-    config = await _get_tool_config(agent_id, "generate_image") or {}
-    provider = config.get("provider", "siliconflow")
+    tool_key = f"generate_image_{provider}"
+    config = await _get_tool_config(agent_id, tool_key) or {}
     model = config.get("model", "")
     api_key = config.get("api_key", "")
     base_url = config.get("base_url", "")
@@ -5088,6 +5141,7 @@ async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str
             image_bytes = await _generate_image_google(
                 api_key,
                 model or "gemini-2.5-flash-image",
+                base_url or "https://generativelanguage.googleapis.com/v1beta",
                 prompt, size,
             )
         else:
@@ -5110,9 +5164,16 @@ async def _generate_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str
             f"Display this image to the user using this exact markdown:\n"
             f"![generated image]({api_image_path})"
         )
+    except httpx.TimeoutException:
+        logger.error(f"[GenerateImage] Timeout ({provider}): took longer than 120 seconds or network unreachable.")
+        return (
+            f"❌ Image generation failed ({provider}): API request timed out after 120 seconds. "
+            f"This is usually caused by network issues or the model taking too long to generate."
+        )
     except Exception as e:
-        logger.error(f"[GenerateImage] Error ({provider}): {e}")
-        return f"❌ Image generation failed ({provider}): {str(e)[:400]}"
+        err_msg = str(e) or type(e).__name__
+        logger.error(f"[GenerateImage] Error ({provider}): {err_msg}")
+        return f"❌ Image generation failed ({provider}): {err_msg[:400]}"
 
 
 async def _generate_image_siliconflow(
@@ -5210,9 +5271,9 @@ async def _generate_image_openai(
 
 
 async def _generate_image_google(
-    api_key: str, model: str, prompt: str, size: str
+    api_key: str, model: str, base_url: str, prompt: str, size: str
 ) -> bytes:
-    """Generate image via Google Gemini Native Image API (Nano Banana).
+    """Generate image via Google Gemini Native Image API (Nano Banana) or Vertex AI.
 
     Uses the Gemini generateContent endpoint with responseModalities=["IMAGE"].
     Converts WxH size to aspect ratio format (e.g. 1024x1024 -> 1:1).
@@ -5221,10 +5282,7 @@ async def _generate_image_google(
     import httpx
     import base64
 
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/"
-        f"models/{model}:generateContent?key={api_key}"
-    )
+    url = f"{base_url.rstrip('/')}/models/{model}:generateContent?key={api_key}"
 
     # Convert WxH size to aspect ratio for Gemini API
     # Supported: 1:1, 3:4, 4:3, 9:16, 16:9
