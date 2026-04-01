@@ -74,13 +74,15 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
 
         return () => {
             mountedRef.current = false;
-            // Release lock on unmount
-            controlApi.unlock(agentId, {
-                session_id: sessionId,
-                export_cookies: false,
-            }).catch(() => {}); 
+            // Release lock on unmount (only if not already unlocking via handleCancel/Complete)
+            if (locked) {
+                controlApi.unlock(agentId, {
+                    session_id: sessionId,
+                    export_cookies: false,
+                }).catch(() => {});
+            }
         };
-    }, [agentId, sessionId]);
+    }, [agentId, sessionId, locked]);
 
     // Poll screenshots
     useEffect(() => {
@@ -90,7 +92,13 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
             try {
                 const res = await controlApi.screenshot(agentId, { session_id: sessionId });
                 if (mountedRef.current && res.screenshot) {
-                    setScreenshot(`data:image/png;base64,${res.screenshot}`);
+                    // Backend returns a complete data URI (data:image/jpeg;base64,...),
+                    // use it directly without wrapping.
+                    setScreenshot(
+                        res.screenshot.startsWith('data:')
+                            ? res.screenshot
+                            : `data:image/png;base64,${res.screenshot}`
+                    );
                 }
             } catch {
                 // Polling failure is non-fatal, will retry
@@ -126,7 +134,8 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
 
         setStatusText(`Clicking at (${x}, ${y})...`);
         try {
-            await controlApi.click(agentId, { session_id: sessionId, x, y });
+            const res = await controlApi.click(agentId, { session_id: sessionId, x, y });
+            if (res.status === 'error') throw new Error(res.detail || 'Click failed');
             setStatusText(`Clicked at (${x}, ${y})`);
         } catch (err: any) {
             setStatusText(`Click failed: ${err.message}`);
@@ -138,7 +147,8 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
         if (!textInput.trim() || !locked) return;
         setStatusText(`Typing: "${textInput.slice(0, 30)}..."`);
         try {
-            await controlApi.type(agentId, { session_id: sessionId, text: textInput });
+            const res = await controlApi.type(agentId, { session_id: sessionId, text: textInput });
+            if (res.status === 'error') throw new Error(res.detail || 'Type failed');
             setStatusText('Text sent');
             setTextInput('');
         } catch (err: any) {
@@ -151,7 +161,8 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
         if (!locked) return;
         setStatusText(`Pressing: ${keys.join('+')}`);
         try {
-            await controlApi.pressKeys(agentId, { session_id: sessionId, keys });
+            const res = await controlApi.pressKeys(agentId, { session_id: sessionId, keys });
+            if (res.status === 'error') throw new Error(res.detail || 'Press failed');
             setStatusText(`Pressed: ${keys.join('+')}`);
         } catch (err: any) {
             setStatusText(`Key press failed: ${err.message}`);
@@ -160,6 +171,8 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
 
     // Complete login — export cookies and close
     const handleComplete = useCallback(async () => {
+        if (!locked) return;
+        setLocked(false);
         setStatusText('Exporting cookies...');
         try {
             const res = await controlApi.unlock(agentId, {
@@ -172,15 +185,22 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
                     ? `Login complete! ${res.cookie_count} cookies saved.`
                     : 'Session unlocked (no cookies exported).'
             );
-            // Small delay so the user sees the success message
             setTimeout(onClose, 1200);
         } catch (err: any) {
             setStatusText(`Unlock failed: ${err.message}`);
+            // Re-enable lock state if unlock request failed so user can try again
+            setLocked(true);
         }
-    }, [agentId, sessionId, platformHint, onClose]);
+    }, [locked, agentId, sessionId, platformHint, onClose]);
 
     // Handle cancel
     const handleCancel = useCallback(async () => {
+        if (!locked) {
+            onClose();
+            return;
+        }
+        setLocked(false);
+        setStatusText('Canceling...');
         try {
             await controlApi.unlock(agentId, {
                 session_id: sessionId,
@@ -188,7 +208,7 @@ export default function TakeControlPanel({ agentId, sessionId, onClose }: Props)
             });
         } catch {}
         onClose();
-    }, [agentId, sessionId, onClose]);
+    }, [locked, agentId, sessionId, onClose]);
 
     return (
         <div className="tc-overlay">

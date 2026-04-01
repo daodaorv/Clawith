@@ -10,6 +10,7 @@ Cookie export occurs automatically when the Take Control session ends.
 
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,16 +33,26 @@ router = APIRouter(prefix="/agents/{agent_id}/control", tags=["agentbay-control"
 
 
 # ── In-memory Take Control lock registry ──
-# Key: (agent_id_str, session_id_str) → user_id who holds the lock
-_take_control_locks: dict[tuple[str, str], str] = {}
+# Key: (agent_id_str, session_id_str) → (user_id, lock_timestamp)
+_take_control_locks: dict[tuple[str, str], tuple[str, float]] = {}
+_LOCK_TIMEOUT_SECONDS = 600  # Auto-expire stale locks after 10 minutes
 
 
 def is_session_locked(agent_id: str, session_id: str) -> bool:
     """Check if a session is currently under human Take Control.
 
     Called by execute_tool to block automatic agentbay_* tool calls.
+    Automatically clears expired locks.
     """
-    return (agent_id, session_id) in _take_control_locks
+    key = (agent_id, session_id)
+    if key not in _take_control_locks:
+        return False
+    _user_id, locked_at = _take_control_locks[key]
+    if time.time() - locked_at > _LOCK_TIMEOUT_SECONDS:
+        logger.info(f"[TakeControl] Auto-expired stale lock for session={session_id[:8]}")
+        del _take_control_locks[key]
+        return False
+    return True
 
 
 # ── Request schemas ──
@@ -89,19 +100,206 @@ class UnlockRequest(BaseModel):
 
 
 async def _get_client(agent_id: uuid.UUID, session_id: str):
-    """Retrieve the AgentBay client for the given agent + session."""
+    """Retrieve the AgentBay client for the given agent + session.
+
+    Checks the session cache for any active image type (browser, computer, code)
+    rather than hardcoding 'browser'. This ensures Take Control works with
+    whatever session type the agent is actively using.
+
+    IMPORTANT: For browser sessions, this also calls _ensure_browser_initialized()
+    because the browser SDK requires explicit initialization before screenshot/
+    interaction APIs will work. Without this, get_browser_snapshot_base64() returns
+    None ("Browser not initialized") and all CDP-based interactions fail silently.
+    """
+    from app.services.agentbay_client import _agentbay_sessions, _AGENTBAY_SESSION_TIMEOUT
+    from datetime import datetime
+
+    now = datetime.now()
+
+    # First, try to find an existing cached session for this agent+session
+    # across all image types (browser, computer, code)
+    for image_type in ("browser", "computer", "code"):
+        cache_key = (agent_id, session_id, image_type)
+        if cache_key in _agentbay_sessions:
+            client, last_used = _agentbay_sessions[cache_key]
+            if now - last_used < _AGENTBAY_SESSION_TIMEOUT:
+                # Refresh timestamp and reuse
+                _agentbay_sessions[cache_key] = (client, now)
+                logger.info(
+                    f"[TakeControl] Found existing {image_type} session for "
+                    f"agent={agent_id}, session={session_id[:8]}"
+                )
+                # Ensure browser is initialized for browser-type sessions
+                if image_type in ("browser", "browser_latest"):
+                    try:
+                        await client._ensure_browser_initialized()
+                    except Exception as e:
+                        logger.warning(f"[TakeControl] Browser init on cached session failed: {e}")
+                return client
+
+    # No cached session found — create a new browser session
     from app.services.agentbay_client import get_agentbay_client_for_agent
 
     try:
         client = await get_agentbay_client_for_agent(
             agent_id, image_type="browser", session_id=session_id
         )
+        # Ensure browser is initialized for the newly created session
+        try:
+            await client._ensure_browser_initialized()
+            logger.info(f"[TakeControl] Browser initialized for new session, agent={agent_id}")
+        except Exception as e:
+            logger.warning(f"[TakeControl] Browser init on new session failed: {e}")
         return client
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No active browser session found: {e}",
         )
+
+
+# ── Session-aware input helpers ──
+# Browser sessions use CDP (Chrome DevTools Protocol) via Playwright to
+# interact directly with Chrome. Desktop sessions use the SDK's computer API.
+
+
+import asyncio
+
+
+def _is_browser_session(client) -> bool:
+    """Check if the client's active session is a browser image."""
+    return getattr(client, "_image_type", "") in ("browser", "browser_latest")
+
+
+async def _cdp_exec(client, script: str, timeout_ms: int = 15000) -> dict:
+    """Execute a Playwright CDP script inside the AgentBay container.
+
+    Uses the AgentBayClient.command_exec wrapper which properly handles
+    the SDK call and returns a dict with {success, stdout, stderr, ...}.
+    """
+    # Write script to temp file inside the container
+    write_result = await client.command_exec(
+        f"cat > /tmp/_tc_action.js << 'TCEOF'\n{script}\nTCEOF",
+        timeout_ms=5000,
+    )
+    if not write_result.get("success"):
+        logger.error(f"[TakeControl] Failed to write CDP script: {write_result}")
+        return {"success": False, "output": "Failed to write script", "stderr": str(write_result)[:200]}
+
+    result = await client.command_exec(
+        "node /tmp/_tc_action.js",
+        timeout_ms=timeout_ms,
+    )
+    stdout = result.get("stdout", "") or result.get("output", "") or ""
+    stderr = result.get("stderr", "") or result.get("error_message", "") or ""
+    cmd_success = result.get("success", False)
+    tc_success = "TC_OK" in stdout
+
+    logger.info(
+        f"[TakeControl] CDP exec: cmd_success={cmd_success}, tc_ok={tc_success}, "
+        f"stdout={stdout[:200]}, stderr={stderr[:200]}, exit_code={result.get('exit_code', 'N/A')}"
+    )
+    return {"success": tc_success, "output": stdout[:500], "stderr": stderr[:200]}
+
+
+async def _perform_click(client, x: int, y: int, button: str = "left"):
+    """Click at (x, y) on the remote session.
+
+    For browser sessions: uses SDK browser.operator.act() with coordinate-based
+    instruction (the same API the agent uses for its own browser interactions).
+    For desktop sessions: uses SDK computer.click_mouse() directly.
+    """
+    image_type = getattr(client, '_image_type', 'unknown')
+    logger.info(f"[TakeControl] Click at ({x}, {y}), button={button}, image_type={image_type}")
+
+    if _is_browser_session(client):
+        # Use the SDK's browser operator act() — same as agent's own browser_click
+        # This is the most reliable method as it's the native SDK approach
+        from agentbay import ActOptions
+        try:
+            action_msg = (
+                f"Click at pixel coordinates ({x}, {y}) on the page. "
+                f"This is a precise coordinate click, not an element-based click."
+            )
+            await asyncio.to_thread(
+                client._session.browser.operator.act,
+                ActOptions(action=action_msg)
+            )
+            logger.info(f"[TakeControl] Browser operator act() click succeeded at ({x}, {y})")
+            return {"success": True, "method": "browser_act", "output": f"Clicked at ({x}, {y})"}
+        except Exception as e:
+            logger.warning(f"[TakeControl] Browser operator act() click failed: {e}")
+            return {"success": False, "output": f"Click failed: {str(e)[:200]}"}
+    else:
+        # Desktop session — SDK computer API directly
+        result = await asyncio.to_thread(
+            client._session.computer.click_mouse, x, y, button
+        )
+        logger.info(f"[TakeControl] Computer API click: success={result.success}")
+        return {"success": result.success, "output": str(result)[:200]}
+
+
+async def _perform_type(client, text: str):
+    """Type text into the remote session.
+
+    For browser sessions: uses SDK browser.operator.act() to type text
+    at the currently focused element.
+    For desktop sessions: uses SDK computer.input_text() directly.
+    """
+    image_type = getattr(client, '_image_type', 'unknown')
+    logger.info(f"[TakeControl] Type text: '{text[:30]}', image_type={image_type}")
+
+    if _is_browser_session(client):
+        from agentbay import ActOptions
+        try:
+            # Use act() to type into the currently focused input
+            action_msg = (
+                f"Type the following text into the currently focused input field: '{text}'. "
+                f"Use the keyboard to type it character by character."
+            )
+            await asyncio.to_thread(
+                client._session.browser.operator.act,
+                ActOptions(action=action_msg)
+            )
+            logger.info(f"[TakeControl] Browser operator act() type succeeded")
+            return {"success": True, "method": "browser_act", "output": "Text typed"}
+        except Exception as e:
+            logger.warning(f"[TakeControl] Browser operator act() type failed: {e}")
+            return {"success": False, "output": f"Type failed: {str(e)[:200]}"}
+    else:
+        result = await asyncio.to_thread(
+            client._session.computer.input_text, text
+        )
+        logger.info(f"[TakeControl] Computer API type: success={result.success}")
+        return {"success": result.success, "output": str(result)[:200]}
+
+
+async def _perform_press_keys(client, keys: list[str]):
+    """Press key combination on the remote session.
+
+    For browser sessions: uses SDK browser.operator.act() with key press
+    instruction (same native SDK approach as click/type).
+    For desktop sessions: uses SDK computer.press_keys() directly.
+    """
+    if _is_browser_session(client):
+        from agentbay import ActOptions
+        key_desc = "+".join(keys)
+        try:
+            action_msg = f"Press the keyboard key combination: {key_desc}"
+            await asyncio.to_thread(
+                client._session.browser.operator.act,
+                ActOptions(action=action_msg)
+            )
+            logger.info(f"[TakeControl] Browser operator act() press_keys succeeded: {key_desc}")
+            return {"success": True, "method": "browser_act", "output": f"Pressed {key_desc}"}
+        except Exception as e:
+            logger.warning(f"[TakeControl] Browser operator act() press_keys failed: {e}")
+            return {"success": False, "output": f"Key press failed: {str(e)[:200]}"}
+    else:
+        result = await asyncio.to_thread(
+            client._session.computer.press_keys, keys
+        )
+        return {"success": result.success, "output": str(result)[:200]}
 
 
 # ── Endpoints ──
@@ -117,6 +315,7 @@ async def control_click(
     """Forward a mouse click to the AgentBay session.
 
     Requires the session to be in Take Control mode (locked).
+    Returns {status: 'ok'|'error', detail: str} so the frontend knows if it worked.
     """
     _agent, _access = await check_agent_access(db, current_user, agent_id)
     if not is_session_locked(str(agent_id), data.session_id):
@@ -124,10 +323,14 @@ async def control_click(
 
     client = await _get_client(agent_id, data.session_id)
     try:
-        # Use browser_click with coordinates
-        result = await client.computer_click(data.x, data.y, button=data.button)
-        return {"status": "ok", "result": str(result)[:200]}
+        result = await _perform_click(client, data.x, data.y, data.button)
+        if result.get("success"):
+            return {"status": "ok", "detail": f"Clicked at ({data.x}, {data.y})"}
+        else:
+            detail = result.get("stderr") or result.get("output") or "Click operation failed"
+            return {"status": "error", "detail": detail[:500]}
     except Exception as e:
+        logger.error(f"[TakeControl] Click exception: {e}")
         return {"status": "error", "detail": str(e)[:500]}
 
 
@@ -145,9 +348,14 @@ async def control_type(
 
     client = await _get_client(agent_id, data.session_id)
     try:
-        result = await client.computer_input_text(data.text)
-        return {"status": "ok", "result": str(result)[:200]}
+        result = await _perform_type(client, data.text)
+        if result.get("success"):
+            return {"status": "ok", "detail": "Text sent"}
+        else:
+            detail = result.get("stderr") or result.get("output") or "Type operation failed"
+            return {"status": "error", "detail": detail[:500]}
     except Exception as e:
+        logger.error(f"[TakeControl] Type exception: {e}")
         return {"status": "error", "detail": str(e)[:500]}
 
 
@@ -165,9 +373,14 @@ async def control_press_keys(
 
     client = await _get_client(agent_id, data.session_id)
     try:
-        result = await client.computer_press_keys(data.keys)
-        return {"status": "ok", "result": str(result)[:200]}
+        result = await _perform_press_keys(client, data.keys)
+        if result.get("success"):
+            return {"status": "ok", "detail": f"Pressed: {'+'.join(data.keys)}"}
+        else:
+            detail = result.get("stderr") or result.get("output") or "Key press failed"
+            return {"status": "error", "detail": detail[:500]}
     except Exception as e:
+        logger.error(f"[TakeControl] Press keys exception: {e}")
         return {"status": "error", "detail": str(e)[:500]}
 
 
@@ -180,15 +393,22 @@ async def control_screenshot(
 ):
     """Get an immediate screenshot from the AgentBay session.
 
-    Returns a base64-encoded screenshot for the Take Control panel.
+    Automatically detects the session type (browser/desktop) and uses
+    the appropriate snapshot method. Returns a base64 data URI.
     """
     _agent, _access = await check_agent_access(db, current_user, agent_id)
 
     client = await _get_client(agent_id, data.session_id)
     try:
+        # Try browser snapshot first, then desktop
         screenshot_b64 = await client.get_browser_snapshot_base64()
+        if not screenshot_b64:
+            screenshot_b64 = await client.get_desktop_snapshot_base64()
+        if not screenshot_b64:
+            logger.warning(f"[TakeControl] Screenshot returned None for agent={agent_id}")
         return {"status": "ok", "screenshot": screenshot_b64}
     except Exception as e:
+        logger.warning(f"[TakeControl] Screenshot failed: {e}")
         return {"status": "error", "detail": str(e)[:500]}
 
 
@@ -209,13 +429,22 @@ async def control_lock(
         raise HTTPException(status_code=403, detail="Manage access required")
 
     key = (str(agent_id), data.session_id)
-    if key in _take_control_locks:
-        return {"status": "already_locked", "locked_by": _take_control_locks[key]}
+    existing = _take_control_locks.get(key)
+    if existing:
+        existing_user_id, locked_at = existing
+        if existing_user_id != str(current_user.id):
+            # Check if the lock has expired
+            if time.time() - locked_at > _LOCK_TIMEOUT_SECONDS:
+                logger.info(f"[TakeControl] Cleared expired lock held by {existing_user_id}")
+            else:
+                return {"status": "already_locked", "locked_by": existing_user_id}
 
-    _take_control_locks[key] = str(current_user.id)
+    # Acquire or refresh lock with current timestamp
+    _take_control_locks[key] = (str(current_user.id), time.time())
+    is_reentry = existing is not None
     logger.info(
         f"[TakeControl] Lock acquired: agent={agent_id}, session={data.session_id}, "
-        f"user={current_user.id}"
+        f"user={current_user.id}, re_entry={is_reentry}"
     )
     return {"status": "locked", "locked_by": str(current_user.id)}
 
@@ -237,31 +466,33 @@ async def control_unlock(
 
     key = (str(agent_id), data.session_id)
     if key not in _take_control_locks:
+        logger.info(f"[TakeControl] Unlock called but no lock found: agent={agent_id}, session={data.session_id}")
         return {"status": "not_locked"}
 
     exported = False
     export_count = 0
 
-    # Export cookies if requested
-    if data.export_cookies and data.platform_hint:
-        try:
-            client = await _get_client(agent_id, data.session_id)
-            export_count = await _export_cookies_from_session(
-                client, agent_id, data.platform_hint, db
-            )
-            exported = True
-            logger.info(
-                f"[TakeControl] Cookies exported: agent={agent_id}, "
-                f"platform={data.platform_hint}, count={export_count}"
-            )
-        except Exception as e:
-            logger.warning(f"[TakeControl] Cookie export failed: {e}")
-
-    # Release the lock
-    del _take_control_locks[key]
-    logger.info(
-        f"[TakeControl] Lock released: agent={agent_id}, session={data.session_id}"
-    )
+    try:
+        # Export cookies if requested (non-critical — lock is released regardless)
+        if data.export_cookies and data.platform_hint:
+            try:
+                client = await _get_client(agent_id, data.session_id)
+                export_count = await _export_cookies_from_session(
+                    client, agent_id, data.platform_hint, db
+                )
+                exported = True
+                logger.info(
+                    f"[TakeControl] Cookies exported: agent={agent_id}, "
+                    f"platform={data.platform_hint}, count={export_count}"
+                )
+            except Exception as e:
+                logger.warning(f"[TakeControl] Cookie export failed (non-fatal): {e}")
+    finally:
+        # ALWAYS release the lock, even if cookie export fails
+        _take_control_locks.pop(key, None)
+        logger.info(
+            f"[TakeControl] Lock released: agent={agent_id}, session={data.session_id}"
+        )
 
     return {
         "status": "unlocked",
