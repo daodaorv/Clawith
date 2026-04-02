@@ -1478,11 +1478,13 @@ AGENT_TOOLS = [
 
 # Core tools that should always be available to agents regardless of
 # DB configuration.
+# Note: send_channel_message is intentionally NOT here — it lives in
+# _CHANNEL_MESSAGE_TOOL_NAMES and is only added when a channel is configured,
+# to avoid sending duplicate tool definitions to the LLM.
 _ALWAYS_INCLUDE_CORE = {
     "send_channel_file",
     "send_file_to_agent",
     "write_file",
-    "send_channel_message",
 }
 # Channel message tool - available when any channel (Feishu/DingTalk/WeCom) is configured
 _CHANNEL_MESSAGE_TOOL_NAMES = {
