@@ -2645,9 +2645,12 @@ export default function EnterpriseSettings() {
                                                                                 mcp_tool_name: tool.name,
                                                                                 parameters_schema: tool.inputSchema || {},
                                                                                 is_default: false,
+                                                                                // Pass the selected company's tenant_id so the tool is
+                                                                                // created under the right company (not the admin's own tenant).
+                                                                                tenant_id: selectedTenantId || undefined,
                                                                             })
                                                                         });
-                                                                        loadAllTools();
+                                                                        await loadAllTools();
                                                                     } catch (e: any) {
                                                                         alert(`${t('enterprise.tools.importFailed') || 'Import failed'}: ${e.message}`);
                                                                     }
@@ -2674,6 +2677,9 @@ export default function EnterpriseSettings() {
                                                                                 mcp_tool_name: tool.name,
                                                                                 parameters_schema: tool.inputSchema || {},
                                                                                 is_default: false,
+                                                                                // Pass the selected company's tenant_id so the tool is
+                                                                                // created under the right company (not the admin's own tenant).
+                                                                                tenant_id: selectedTenantId || undefined,
                                                                             })
                                                                         });
                                                                         successCount++;
@@ -2681,7 +2687,8 @@ export default function EnterpriseSettings() {
                                                                         errors.push(`${tool.name}: ${e.message}`);
                                                                     }
                                                                 }
-                                                                loadAllTools();
+                                                                // Await refresh so the tool list is up-to-date before closing the form.
+                                                                await loadAllTools();
                                                                 setShowAddMCP(false); setMcpTestResult(null); setMcpForm({ server_url: '', server_name: '' }); setMcpRawInput('');
                                                                 if (errors.length > 0) {
                                                                     alert(`Imported ${successCount}/${tools.length} tools.\nFailed:\n${errors.join('\n')}`);

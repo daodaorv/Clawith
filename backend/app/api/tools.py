@@ -117,6 +117,9 @@ class ToolCreate(BaseModel):
     mcp_server_name: str | None = None
     mcp_tool_name: str | None = None
     is_default: bool = False
+    # Optional: platform admins can specify target tenant (e.g. when managing
+    # another company's tools via the Enterprise Settings page).
+    tenant_id: str | None = None
 
 
 class ToolUpdate(BaseModel):
@@ -190,9 +193,27 @@ async def create_tool(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new tool (typically MCP)."""
-    # Check unique name
-    existing = await db.execute(select(Tool).where(Tool.name == data.name))
+    """Create a new tool (typically MCP).
+
+    The tool is scoped to the target tenant, which defaults to the caller's
+    own tenant but can be overridden via data.tenant_id. This allows platform
+    admins to import MCP tools while viewing another company's settings page.
+    """
+    # Resolve target tenant: explicit payload value takes priority so that
+    # platform admins importing tools for another company work correctly.
+    target_tenant_id: uuid.UUID | None = None
+    if data.tenant_id:
+        try:
+            target_tenant_id = uuid.UUID(data.tenant_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid tenant_id format")
+    else:
+        target_tenant_id = current_user.tenant_id
+
+    # Unique name check is scoped per tenant to avoid cross-tenant collisions.
+    existing = await db.execute(
+        select(Tool).where(Tool.name == data.name, Tool.tenant_id == target_tenant_id)
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Tool '{data.name}' already exists")
 
@@ -205,9 +226,10 @@ async def create_tool(
         icon=data.icon,
         parameters_schema=data.parameters_schema,
         mcp_server_url=data.mcp_server_url,
+        mcp_server_name=data.mcp_server_name,
         mcp_tool_name=data.mcp_tool_name,
         is_default=data.is_default,
-        tenant_id=current_user.tenant_id,
+        tenant_id=target_tenant_id,
         source="admin",
     )
     db.add(tool)
