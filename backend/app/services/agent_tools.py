@@ -6151,7 +6151,7 @@ async def _feishu_doc_create(agent_id: uuid.UUID, arguments: dict) -> str:
     if not app_id or not app_secret:
         return "Failed: Feishu app credentials not configured for this agent."
 
-    folder_token = arguments.get("folder_token")
+    folder_token = (arguments.get("folder_token") or "").strip()
     wiki_space_id = (arguments.get("wiki_space_id") or "").strip()
     parent_node_token = (arguments.get("parent_node_token") or "").strip()
 
@@ -6160,6 +6160,16 @@ async def _feishu_doc_create(agent_id: uuid.UUID, arguments: dict) -> str:
 
     try:
         import httpx
+
+        # ── Smart fallback: if folder_token is actually a wiki node token,
+        #    auto-redirect to wiki creation branch. This handles LLMs that
+        #    pass the wiki node token via the old folder_token param.
+        if folder_token and not wiki_space_id and not parent_node_token:
+            probe = await _feishu_wiki_get_node(folder_token, tenant_token)
+            if probe and probe.get("space_id"):
+                wiki_space_id = probe["space_id"]
+                parent_node_token = probe.get("node_token", folder_token)
+                folder_token = ""  # Don't use as Drive folder
 
         # ── Wiki branch: create as a wiki node ──────────────────────────
         # If parent_node_token is given but wiki_space_id is not,
