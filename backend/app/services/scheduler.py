@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from croniter import croniter
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.core.security import decrypt_data_or_return_plaintext
@@ -195,7 +195,7 @@ async def _tick():
         async with async_session() as db:
             result = await db.execute(
                 select(AgentSchedule).where(
-                    AgentSchedule.is_enabled == True,
+                    AgentSchedule.is_enabled,
                     AgentSchedule.next_run_at <= now,
                 )
             )

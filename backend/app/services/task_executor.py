@@ -4,7 +4,6 @@ Uses the same agent context (soul, memory, skills, relationships, tools)
 as the chat dialog. Supports tool-calling loop for autonomous execution.
 """
 
-import asyncio
 import json
 import uuid
 from datetime import datetime, timezone

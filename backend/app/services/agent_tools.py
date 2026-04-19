@@ -18,7 +18,7 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 import re
 
 from loguru import logger
@@ -28,11 +28,10 @@ from app.database import async_session
 from app.models.task import Task
 from app.models.agent import Agent as AgentModel
 from app.models.org import AgentRelationship, OrgMember, AgentAgentRelationship
-from app.models.audit import ChatMessage, AuditLog
+from app.models.audit import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.channel_config import ChannelConfig
 from app.models.user import User as UserModel
-from app.services.auth_registry import auth_provider_registry
 from app.services.channel_session import find_or_create_channel_session
 from app.services.channel_user_service import get_platform_user_by_org_member
 from app.config import get_settings
@@ -1619,7 +1618,7 @@ async def _agent_has_feishu(agent_id: uuid.UUID) -> bool:
                 select(ChannelConfig).where(
                     ChannelConfig.agent_id == agent_id,
                     ChannelConfig.channel_type == "feishu",
-                    ChannelConfig.is_configured == True,
+                    ChannelConfig.is_configured,
                 )
             )
             return r.scalar_one_or_none() is not None
@@ -1635,7 +1634,7 @@ async def _agent_has_any_channel(agent_id: uuid.UUID) -> bool:
             r = await db.execute(
                 select(ChannelConfig).where(
                     ChannelConfig.agent_id == agent_id,
-                    ChannelConfig.is_configured == True,
+                    ChannelConfig.is_configured,
                 )
             )
             return r.scalar_one_or_none() is not None
@@ -1662,7 +1661,7 @@ async def get_agent_tools_for_llm(agent_id: uuid.UUID) -> list[dict]:
 
         async with async_session() as db:
             # Get all globally enabled tools
-            all_tools_r = await db.execute(select(Tool).where(Tool.enabled == True))
+            all_tools_r = await db.execute(select(Tool).where(Tool.enabled))
             all_tools = all_tools_r.scalars().all()
 
             # Get agent-specific assignments
@@ -2161,8 +2160,6 @@ async def _web_search(arguments: dict, agent_id: uuid.UUID | None = None) -> str
 
     Config resolution priority: Agent config > Company config > Defaults.
     """
-    import httpx
-    import re
 
     query = arguments.get("query", "")
     if not query:
@@ -2191,7 +2188,8 @@ async def _web_search(arguments: dict, agent_id: uuid.UUID | None = None) -> str
 
 async def _search_duckduckgo(query: str, max_results: int) -> str:
     """Search via DuckDuckGo HTML (free, no API key)."""
-    import httpx, re
+    import httpx
+    import re
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         resp = await client.get(
@@ -2288,7 +2286,6 @@ async def _jina_search(arguments: dict) -> str:
 async def _jina_read(arguments: dict) -> str:
     """Read web page via Jina AI Reader API (r.jina.ai). Returns clean structured markdown."""
     import httpx
-    from app.config import get_settings
 
     url = arguments.get("url", "").strip()
     if not url:
@@ -3506,6 +3503,53 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                 select(ChannelConfig).where(ChannelConfig.agent_id == agent_id, ChannelConfig.channel_type == "feishu")
             )
             config = config_result.scalar_one_or_none()
+
+            async def _save_direct_outgoing_to_feishu_session(history_id: str):
+                """Best-effort history persistence for direct Feishu sends."""
+                try:
+                    from datetime import datetime as _dt, timezone as _tz
+
+                    agent_r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
+                    agent_obj = agent_r.scalar_one_or_none()
+
+                    lookup = select(OrgMember).where(
+                        OrgMember.status == "active",
+                        or_(
+                            OrgMember.open_id == history_id,
+                            OrgMember.external_id == history_id,
+                        ),
+                    )
+                    if agent_obj and agent_obj.tenant_id:
+                        lookup = lookup.where(OrgMember.tenant_id == agent_obj.tenant_id)
+                    history_member = (await db.execute(lookup.limit(1))).scalar_one_or_none()
+                    if history_member is None:
+                        logger.info(f"[Feishu] Skipping history save, no OrgMember found for {history_id}")
+                        return
+
+                    platform_user = await get_platform_user_by_org_member(
+                        db=db,
+                        org_member=history_member,
+                        agent_tenant_id=agent_obj.tenant_id if agent_obj else None,
+                    )
+                    sess = await find_or_create_channel_session(
+                        db=db,
+                        agent_id=agent_id,
+                        user_id=platform_user.id,
+                        external_conv_id=f"feishu_p2p_{history_id}",
+                        source_channel="feishu",
+                        first_message_title=f"[Agent 鈫?{history_member.name or history_id}]",
+                    )
+                    db.add(ChatMessage(
+                        agent_id=agent_id,
+                        user_id=platform_user.id,
+                        role="assistant",
+                        content=message_text,
+                        conversation_id=str(sess.id),
+                    ))
+                    sess.last_message_at = _dt.now(_tz.utc)
+                    await db.commit()
+                except Exception as e:
+                    logger.error(f"[Feishu] Failed to save direct outgoing message to history: {e}")
             if not config:
                 return "❌ This agent has no Feishu channel configured"
             if (direct_user_id or direct_open_id) and not member_name:
@@ -3520,7 +3564,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                     )
                     if resp.get("code") == 0:
                         # Save to history session
-                        await _save_outgoing_to_feishu_session(direct_user_id or direct_open_id)
+                        await _save_direct_outgoing_to_feishu_session(direct_open_id or direct_user_id)
                         return f"✅ 消息已发送（user_id: {direct_user_id}）"
                     # Fallback to open_id if user_id fails
                     logger.info(f"❌ 发送失败：{resp.get('msg')} (code {resp.get('code')})")
@@ -3532,7 +3576,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                             receive_id_type="open_id",
                         )
                         if resp.get("code") == 0:
-                            await _save_outgoing_to_feishu_session(direct_open_id)
+                            await _save_direct_outgoing_to_feishu_session(direct_open_id)
                             return f"✅ 消息已发送（open_id: {direct_open_id}）"
                     return f"❌ 发送失败：{resp.get('msg')} (code {resp.get('code')})"
                 else:
@@ -3543,7 +3587,7 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
                         receive_id_type="open_id",
                     )
                     if resp.get("code") == 0:
-                        await _save_outgoing_to_feishu_session(direct_open_id)
+                        await _save_direct_outgoing_to_feishu_session(direct_open_id)
                         return f"✅ 消息已发送（open_id: {direct_open_id}）"
                     logger.info(f"❌ 发送失败：{resp.get('msg')} (code {resp.get('code')})")
                     return f"❌ 发送失败：{resp.get('msg')} (code {resp.get('code')})"
@@ -3588,8 +3632,6 @@ async def _send_feishu_message(agent_id: uuid.UUID, args: dict) -> str:
 
                     agent_r = await db.execute(select(AgentModel).where(AgentModel.id == agent_id))
                     agent_obj = agent_r.scalar_one_or_none()
-                    creator_id = agent_obj.creator_id if agent_obj else agent_id
-
                     # Get or create platform user from OrgMember (unified logic)
                     platform_user = await get_platform_user_by_org_member(
                         db=db,
@@ -3753,7 +3795,7 @@ async def _send_dingtalk_message(
                 select(ChannelConfig).where(
                     ChannelConfig.agent_id == agent_id,
                     ChannelConfig.channel_type == "dingtalk",
-                    ChannelConfig.is_configured == True,
+                    ChannelConfig.is_configured,
                 )
             )
             config = config_result.scalar_one_or_none()
@@ -3849,7 +3891,7 @@ async def _send_wecom_message(
                 select(ChannelConfig).where(
                     ChannelConfig.agent_id == agent_id,
                     ChannelConfig.channel_type == "wecom",
-                    ChannelConfig.is_configured == True,
+                    ChannelConfig.is_configured,
                 )
             )
             config = config_result.scalar_one_or_none()
@@ -4252,7 +4294,6 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
                 return f"⚠️ {target.name} is currently unavailable — their service period has ended. Please contact the platform administrator."
 
             # Enforce relationship: only allow communication with agents in relationships
-            from app.models.org import AgentAgentRelationship
             rel_check = await db.execute(
                 select(AgentAgentRelationship.id).where(
                     ((AgentAgentRelationship.agent_id == from_agent_id) & (AgentAgentRelationship.target_agent_id == target.id))
@@ -4836,7 +4877,6 @@ async def _plaza_add_comment(agent_id: uuid.UUID, arguments: dict) -> str:
                 mentions = re.findall(r'@(\S+)', content)
                 if mentions:
                     from app.services.notification_service import send_notification
-                    from app.models.user import User
                     # Load agents in tenant
                     a_q = select(AgentModel).where(AgentModel.id != agent_id)
                     if agent.tenant_id:
@@ -5204,7 +5244,7 @@ async def _handle_set_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
             result = await db.execute(
                 select(sa_func.count()).select_from(AgentTrigger).where(
                     AgentTrigger.agent_id == agent_id,
-                    AgentTrigger.is_enabled == True,
+                    AgentTrigger.is_enabled,
                 )
             )
             count = result.scalar() or 0
@@ -5305,7 +5345,7 @@ async def _handle_update_trigger(agent_id: uuid.UUID, arguments: dict) -> str:
                 changes.append(f"config: {old_config} → {new_config}")
             if new_reason is not None:
                 trigger.reason = new_reason
-                changes.append(f"reason updated")
+                changes.append("reason updated")
 
             await db.commit()
 
@@ -5411,12 +5451,10 @@ async def _upload_image(agent_id: uuid.UUID, ws: Path, arguments: dict) -> str:
 
     # ── Load ImageKit credentials (Agent > Company priority) ──
     private_key = ""
-    url_endpoint = ""
     try:
         # Use standard _get_tool_config (Agent > Company, cached, schema-aware decryption)
         config = await _get_tool_config(agent_id, "upload_image") or {}
         private_key = config.get("private_key", "")
-        url_endpoint = config.get("url_endpoint", "")
     except Exception as e:
         logger.error(f"[UploadImage] Config load error: {e}")
 
@@ -5783,7 +5821,7 @@ async def _get_feishu_token(agent_id: uuid.UUID) -> tuple[str, str] | None:
             select(ChannelConfig).where(
                 ChannelConfig.agent_id == agent_id,
                 ChannelConfig.channel_type == "feishu",
-                ChannelConfig.is_configured == True,
+                ChannelConfig.is_configured,
             )
         )
         config = result.scalar_one_or_none()
@@ -5984,7 +6022,7 @@ def _parse_feishu_url(url: str) -> dict:
         result['table_id'] = table_match.group(1)
     
     # support URL with /tblxxxxxx
-    if not 'table_id' in result:
+    if 'table_id' not in result:
         tbl_match = re.search(r'/(tbl[a-zA-Z0-9_]+)', url)
         if tbl_match:
             result['table_id'] = tbl_match.group(1)
@@ -6084,7 +6122,8 @@ async def _bitable_list_tables(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.bitable_list_tables(app_id, app_secret, app_token)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         tables = resp.get("data", {}).get("items", [])
         if not tables:
@@ -6166,7 +6205,8 @@ async def _bitable_list_fields(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.bitable_list_fields(app_id, app_secret, app_token, table_id)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         fields = resp.get("data", {}).get("items", [])
         if not fields:
@@ -6200,12 +6240,13 @@ async def _bitable_query_records(agent_id: uuid.UUID, arguments: dict) -> str:
         elif isinstance(filter_info, str) and filter_info.strip():
             try:
                 filters_dict = json.loads(filter_info)
-            except:
-                pass 
+            except Exception:
+                pass
                 
         resp = await feishu_service.bitable_query_records(app_id, app_secret, app_token, table_id, filters_dict)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         records = resp.get("data", {}).get("items", [])
         if not records:
@@ -6242,7 +6283,8 @@ async def _bitable_create_record(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.bitable_create_record(app_id, app_secret, app_token, table_id, fields)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         record = resp.get("data", {}).get("record", {})
         # Provide a user-accessible link so they can verify the new row in the table
@@ -6281,7 +6323,8 @@ async def _bitable_update_record(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.bitable_update_record(app_id, app_secret, app_token, table_id, record_id, fields)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         record = resp.get("data", {}).get("record", {})
         # Provide a user-accessible link so they can verify the updated row
@@ -6313,7 +6356,8 @@ async def _bitable_delete_record(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.bitable_delete_record(app_id, app_secret, app_token, table_id, record_id)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         # Provide a user-accessible link so they can verify the deletion
         tenant_token = await feishu_service.get_tenant_access_token(app_id, app_secret)
@@ -6356,7 +6400,8 @@ async def _feishu_read_doc(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.read_feishu_doc(app_id, app_secret, doc_token)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         content = resp.get("data", {}).get("content", "")
         if not content:
@@ -6378,7 +6423,8 @@ async def _feishu_create_doc(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.create_feishu_doc(app_id, app_secret, folder_token or None, title)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         doc = resp.get("data", {}).get("document", {})
         doc_id = doc.get("document_id")
@@ -6410,7 +6456,8 @@ async def _feishu_append_doc(agent_id: uuid.UUID, arguments: dict) -> str:
         # Feishu uses the document_id as the root block_id to append entirely to the document
         resp = await feishu_service.append_feishu_doc(app_id, app_secret, doc_token, content)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         return "OK: Content appended successfully to the end of the document."
     except Exception as e:
@@ -6469,7 +6516,7 @@ async def _feishu_wiki_list(agent_id: uuid.UUID, arguments: dict) -> str:
 
     space_id = node_info["space_id"]
     if not space_id:
-        return f"❌ 无法获取知识库 space_id，请检查 token 是否正确。"
+        return "❌ 无法获取知识库 space_id，请检查 token 是否正确。"
 
     async def _list_children(parent_token: str, depth: int) -> list[dict]:
         """Return flat list of {title, node_token, obj_token, has_child, depth}."""
@@ -6550,7 +6597,8 @@ async def _feishu_doc_read(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.read_feishu_doc(app_id, app_secret, read_token)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
         
         content = resp.get("data", {}).get("content", "")
         if not content:
@@ -6647,8 +6695,9 @@ async def _feishu_doc_create(agent_id: uuid.UUID, arguments: dict) -> str:
         # ── Regular Drive branch (original behavior) ─────────────────────
         resp = await feishu_service.create_feishu_doc(app_id, app_secret, folder_token, title)
         err = _check_feishu_err(resp)
-        if err: return err
-        
+        if err:
+            return err
+
         doc = resp.get("data", {}).get("document", {})
         doc_token = doc.get("document_id", "")
         doc_url = await _get_feishu_tenant_doc_url(tenant_token, doc_token)
@@ -6887,7 +6936,8 @@ async def _feishu_doc_append(agent_id: uuid.UUID, arguments: dict) -> str:
                 headers={"Authorization": f"Bearer {tenant_token}"},
             )).json()
             err = _check_feishu_err(meta_resp)
-            if err: return err
+            if err:
+                return err
 
             body_block_id = (
                 meta_resp.get("data", {}).get("document", {}).get("body", {}).get("block_id")
@@ -6906,7 +6956,8 @@ async def _feishu_doc_append(agent_id: uuid.UUID, arguments: dict) -> str:
             )).json()
 
             err = _check_feishu_err(result)
-            if err: return err
+            if err:
+                return err
 
         doc_url = await _get_feishu_tenant_doc_url(tenant_token, docx_token)
         return (
@@ -7065,8 +7116,8 @@ async def _feishu_drive_share(agent_id: uuid.UUID, arguments: dict) -> str:
                         # Feishu platform policy: you cannot add yourself as a collaborator via API.
                         # Permissions must be granted by others, or set manually in the UI.
                         results.append(
-                            f"⚠️ 飞书平台安全限制：无法通过 API 为自己添加协作权限。\n"
-                            f"请手动操作：打开文档 → 右上角「分享」→ 添加自己并设置权限。"
+                            "⚠️ 飞书平台安全限制：无法通过 API 为自己添加协作权限。\n"
+                            "请手动操作：打开文档 → 右上角「分享」→ 添加自己并设置权限。"
                         )
                     elif _c in (99991672, 99991668):
                         return (
@@ -7176,7 +7227,7 @@ async def _feishu_drive_delete(agent_id: uuid.UUID, arguments: dict) -> str:
         elif code == 1061007:
             return f"❌ 文件 `{file_token}` 已被删除。"
         elif code == 1061045:
-            return f"⚠️ 接口频率限制，请稍后重试。（每秒最多 5 次）"
+            return "⚠️ 接口频率限制，请稍后重试。（每秒最多 5 次）"
         else:
             return f"❌ 删除{type_label}失败：{msg} (code {code})"
 
@@ -7277,7 +7328,7 @@ async def _feishu_calendar_list(agent_id: uuid.UUID, arguments: dict) -> str:
                             busy_lines.append(f"  🔴 {s}–{e}")
                         except Exception:
                             busy_lines.append(f"  🔴 {slot.get('start_time')}–{slot.get('end_time')}")
-                    freebusy_section = f"\n📌 **用户真实日历（忙碌时段）**：\n" + "\n".join(busy_lines)
+                    freebusy_section = "\n📌 **用户真实日历（忙碌时段）**：\n" + "\n".join(busy_lines)
                 else:
                     freebusy_section = "\n📌 **用户真实日历**：该时段全部空闲。"
         except Exception as _fe:
@@ -7557,7 +7608,8 @@ async def _feishu_approval_create(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.create_approval_instance(app_id, app_secret, approval_code, user_id, form_data)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
 
         instance_code = resp.get("data", {}).get("instance_code", "")
         return f"✅ 审批发起成功！\n审批实例 ID: `{instance_code}`"
@@ -7580,7 +7632,8 @@ async def _feishu_approval_query(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.query_approval_instances(app_id, app_secret, approval_code, status)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
 
         data = resp.get("data", {})
         instance_codes = data.get("instance_code_list", [])
@@ -7603,7 +7656,8 @@ async def _feishu_approval_get(agent_id: uuid.UUID, arguments: dict) -> str:
     try:
         resp = await feishu_service.get_approval_instance(app_id, app_secret, instance_id)
         err = _check_feishu_err(resp)
-        if err: return err
+        if err:
+            return err
 
         data = resp.get("data", {})
         import json
@@ -7622,7 +7676,6 @@ async def _feishu_user_search(agent_id: uuid.UUID, arguments: dict) -> str:
     2. Fall back to Contact v3 GET /users/{open_id} if we find a match by email.
     The cache is populated by feishu.py each time a message sender is resolved.
     """
-    import httpx
     import json as _json
     import pathlib as _pl
 
@@ -7634,7 +7687,7 @@ async def _feishu_user_search(agent_id: uuid.UUID, arguments: dict) -> str:
     if not app_id or not app_secret:
         return "❌ Agent has no Feishu channel configured."
     from app.services.feishu_service import feishu_service
-    token = await feishu_service.get_tenant_access_token(app_id, app_secret)
+    _ = await feishu_service.get_tenant_access_token(app_id, app_secret)
 
     # ── Load local contacts cache ─────────────────────────────────────────────
     _cache_file = _pl.Path(f"/data/workspaces/{agent_id}/feishu_contacts_cache.json")
@@ -8043,7 +8096,7 @@ async def _agentbay_browser_click(agent_id: Optional[uuid.UUID], ws: Path, argum
     except RuntimeError as e:
         return f"❌ {str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Browser click failed")
+        logger.exception("[AgentBay] Browser click failed")
         return f"❌ 点击失败: {str(e)[:200]}"
 
 
@@ -8065,7 +8118,7 @@ async def _agentbay_browser_type(agent_id: Optional[uuid.UUID], ws: Path, argume
     except RuntimeError as e:
         return f"❌ {str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Browser type failed")
+        logger.exception("[AgentBay] Browser type failed")
         return f"❌ 输入失败: {str(e)[:200]}"
 
 
@@ -8552,7 +8605,7 @@ async def _agentbay_computer_click(agent_id: Optional[uuid.UUID], ws: Path, argu
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer click failed")
+        logger.exception("[AgentBay] Computer click failed")
         return f"Click failed: {str(e)[:200]}"
 
 
@@ -8573,11 +8626,11 @@ async def _agentbay_computer_input_text(agent_id: Optional[uuid.UUID], ws: Path,
         result = await client.computer_input_text(text)
         if result.get("success"):
             return f"Typed text: {text[:100]}"
-        return f"Text input failed"
+        return "Text input failed"
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer input_text failed")
+        logger.exception("[AgentBay] Computer input_text failed")
         return f"Text input failed: {str(e)[:200]}"
 
 
@@ -8605,7 +8658,7 @@ async def _agentbay_computer_press_keys(agent_id: Optional[uuid.UUID], ws: Path,
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer press_keys failed")
+        logger.exception("[AgentBay] Computer press_keys failed")
         return f"Key press failed: {str(e)[:200]}"
 
 
@@ -8627,11 +8680,11 @@ async def _agentbay_computer_scroll(agent_id: Optional[uuid.UUID], ws: Path, arg
         result = await client.computer_scroll(x, y, direction=direction, amount=amount)
         if result.get("success"):
             return f"Scrolled {direction} by {amount} step(s) at ({x}, {y})"
-        return f"Scroll failed"
+        return "Scroll failed"
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer scroll failed")
+        logger.exception("[AgentBay] Computer scroll failed")
         return f"Scroll failed: {str(e)[:200]}"
 
 
@@ -8651,11 +8704,11 @@ async def _agentbay_computer_move_mouse(agent_id: Optional[uuid.UUID], ws: Path,
         result = await client.computer_move_mouse(x, y)
         if result.get("success"):
             return f"Mouse moved to ({x}, {y})"
-        return f"Mouse move failed"
+        return "Mouse move failed"
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer move_mouse failed")
+        logger.exception("[AgentBay] Computer move_mouse failed")
         return f"Mouse move failed: {str(e)[:200]}"
 
 
@@ -8678,11 +8731,11 @@ async def _agentbay_computer_drag_mouse(agent_id: Optional[uuid.UUID], ws: Path,
         result = await client.computer_drag_mouse(from_x, from_y, to_x, to_y, button=button)
         if result.get("success"):
             return f"Dragged from ({from_x}, {from_y}) to ({to_x}, {to_y})"
-        return f"Drag failed"
+        return "Drag failed"
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer drag_mouse failed")
+        logger.exception("[AgentBay] Computer drag_mouse failed")
         return f"Drag failed: {str(e)[:200]}"
 
 
@@ -8706,7 +8759,7 @@ async def _agentbay_computer_get_screen_size(agent_id: Optional[uuid.UUID], ws: 
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer get_screen_size failed")
+        logger.exception("[AgentBay] Computer get_screen_size failed")
         return f"Get screen size failed: {str(e)[:200]}"
 
 
@@ -8744,7 +8797,7 @@ async def _agentbay_computer_start_app(agent_id: Optional[uuid.UUID], ws: Path, 
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer start_app failed")
+        logger.exception("[AgentBay] Computer start_app failed")
         return f"Start application failed: {str(e)[:200]}"
 
 
@@ -8768,7 +8821,7 @@ async def _agentbay_computer_get_cursor_position(agent_id: Optional[uuid.UUID], 
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer get_cursor_position failed")
+        logger.exception("[AgentBay] Computer get_cursor_position failed")
         return f"Get cursor position failed: {str(e)[:200]}"
 
 
@@ -8792,7 +8845,7 @@ async def _agentbay_computer_get_active_window(agent_id: Optional[uuid.UUID], ws
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer get_active_window failed")
+        logger.exception("[AgentBay] Computer get_active_window failed")
         return f"Get active window failed: {str(e)[:200]}"
 
 
@@ -8817,7 +8870,7 @@ async def _agentbay_computer_activate_window(agent_id: Optional[uuid.UUID], ws: 
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer activate_window failed")
+        logger.exception("[AgentBay] Computer activate_window failed")
         return f"Activate window failed: {str(e)[:200]}"
 
 
@@ -8843,5 +8896,5 @@ async def _agentbay_computer_list_visible_apps(agent_id: Optional[uuid.UUID], ws
     except RuntimeError as e:
         return f"{str(e)}"
     except Exception as e:
-        logger.exception(f"[AgentBay] Computer list_visible_apps failed")
+        logger.exception("[AgentBay] Computer list_visible_apps failed")
         return f"List applications failed: {str(e)[:200]}"

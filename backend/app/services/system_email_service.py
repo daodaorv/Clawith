@@ -10,9 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import smtplib
-import ssl
-import uuid
+import smtplib  # noqa: F401 - retained for compatibility with existing tests/monkeypatches
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,7 +18,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, make_msgid
 
-from app.core.email import force_ipv4, send_smtp_email
+from app.core.email import force_ipv4, send_smtp_email  # noqa: F401 - retained for compatibility with existing tests
 
 logger = logging.getLogger(__name__)
 
@@ -248,9 +246,6 @@ async def get_email_templates(db=None) -> dict[str, dict[str, str]]:
     Returns:
         A dict mapping scenario_key -> {"subject": str, "body": str}
     """
-    from sqlalchemy import select
-    from app.models.system_settings import SystemSetting
-
     templates = dict(DEFAULT_EMAIL_TEMPLATES)  # start with defaults
 
     if not db:

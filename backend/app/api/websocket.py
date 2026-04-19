@@ -3,17 +3,18 @@
 import json
 import uuid
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.config import get_settings
-from app.core.security import decode_access_token, decrypt_data_or_return_plaintext
+from app.core.security import (
+    decode_access_token,
+    decrypt_data_or_return_plaintext,
+    get_current_user,
+)
 from app.core.permissions import check_agent_access, is_agent_expired
-from app.database import async_session
-from app.models.agent import Agent
+from app.database import async_session, get_db
 from app.models.audit import ChatMessage
 from app.models.llm import LLMModel
 from app.models.user import User
@@ -67,12 +68,6 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
-
-
-from fastapi import Depends
-from app.core.security import get_current_user
-from app.database import get_db
-from app.models.user import User
 
 
 @router.get("/api/chat/{agent_id}/history")
@@ -260,7 +255,7 @@ async def call_llm(
         elif round_i == _warn_threshold_96:
             api_messages.append(LLMMessage(
                 role="user",
-                content=f"🚨 仅剩 2 轮工具调用。请立即保存进度到 focus.md 并设置续接触发器。",
+                content="🚨 仅剩 2 轮工具调用。请立即保存进度到 focus.md 并设置续接触发器。",
             ))
 
         try:
@@ -665,7 +660,7 @@ async def websocket_chat(
             try:
                 from app.services.quota_guard import (
                     check_conversation_quota, increment_conversation_usage,
-                    check_agent_expired, check_agent_llm_quota, increment_agent_llm_usage,
+                    check_agent_expired, increment_agent_llm_usage,
                     QuotaExceeded, AgentExpired,
                 )
                 await check_conversation_quota(user_id)
@@ -769,8 +764,7 @@ async def websocket_chat(
                         # because separate WebSocket messages get silently dropped by nginx.
                         if data.get("status") == "done":
                             try:
-                                from app.services.agentbay_live import detect_agentbay_env, get_desktop_screenshot, get_browser_snapshot
-                                import re as _re_live
+                                from app.services.agentbay_live import detect_agentbay_env, get_browser_snapshot, get_desktop_screenshot
                                 tool_name = data.get("name", "")
                                 env = detect_agentbay_env(tool_name)
                                 if env:
@@ -849,7 +843,7 @@ async def websocket_chat(
                                 websocket.receive_json(), timeout=0.5
                             )
                             if msg.get("type") == "abort":
-                                logger.info(f"[WS] Abort received, cancelling LLM task")
+                                logger.info("[WS] Abort received, cancelling LLM task")
                                 llm_task.cancel()
                                 aborted = True
                                 break
