@@ -10,6 +10,51 @@ branch_labels = None
 depends_on = None
 
 
+def _load_table_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        sa.text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _build_user_participant_backfill_sql(
+    *,
+    user_columns: set[str],
+    identity_columns: set[str],
+) -> str:
+    has_identity_join = "identity_id" in user_columns and "id" in identity_columns
+
+    display_parts: list[str] = []
+    if "display_name" in user_columns:
+        display_parts.append("NULLIF(u.display_name, '')")
+    if "username" in user_columns:
+        display_parts.append("NULLIF(u.username, '')")
+    if has_identity_join and "username" in identity_columns:
+        display_parts.append("NULLIF(i.username, '')")
+    if has_identity_join and "email" in identity_columns:
+        display_parts.append("NULLIF(i.email, '')")
+    display_parts.append("'User'")
+
+    avatar_expr = "u.avatar_url" if "avatar_url" in user_columns else "NULL"
+    join_clause = "LEFT JOIN identities i ON i.id = u.identity_id" if has_identity_join else ""
+
+    return f"""
+        INSERT INTO participants (id, type, ref_id, display_name, avatar_url)
+        SELECT gen_random_uuid(), 'user', u.id, COALESCE({", ".join(display_parts)}), {avatar_expr}
+        FROM users u
+        {join_clause}
+        ON CONFLICT DO NOTHING
+    """
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -30,12 +75,12 @@ def upgrade() -> None:
     """))
 
     # 2. Backfill: create Participant for every existing User
-    conn.execute(sa.text("""
-        INSERT INTO participants (id, type, ref_id, display_name, avatar_url)
-        SELECT gen_random_uuid(), 'user', id, COALESCE(display_name, username), avatar_url
-        FROM users
-        ON CONFLICT DO NOTHING
-    """))
+    user_columns = _load_table_columns(conn, "users")
+    identity_columns = _load_table_columns(conn, "identities") if "identity_id" in user_columns else set()
+    conn.execute(sa.text(_build_user_participant_backfill_sql(
+        user_columns=user_columns,
+        identity_columns=identity_columns,
+    )))
 
     # 3. Backfill: create Participant for every existing Agent
     conn.execute(sa.text("""
