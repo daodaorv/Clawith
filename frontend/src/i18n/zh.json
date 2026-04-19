@@ -1117,6 +1117,7 @@
       "supportsVisionDesc": "— 为能够分析图像的模型启用（GPT-4o、Claude、Qwen-VL 等）",
       "test": "测试",
       "testing": "测试中...",
+      "testingAndAutofill": "测试并自动填写中...",
       "testSuccess": "OK ({{latency}}ms)",
       "testFailed": "测试失败: {{error}}\n\n延迟: {{latency}}ms",
       "testError": "测试错误: {{message}}",
@@ -1124,7 +1125,47 @@
       "vision": "视觉",
       "temperature": "模型温度",
       "temperaturePlaceholder": "例如 0.7 或 1.0（留空使用默认值）",
-      "temperatureDesc": "留空使用提供商默认值。o1/o3 推理模型通常需要 1.0"
+      "temperatureDesc": "留空使用提供商默认值。o1/o3 推理模型通常需要 1.0",
+      "testAndAutofill": "测试并自动填写",
+      "apiKeyKeepPlaceholder": "留空则继续使用已保存的 API Key",
+      "probeStatusLabel": "模型连通性",
+      "probeIdleMessage": "先填写提供商、模型名和 API Key，再点击“测试并自动填写”。系统会识别接口类型并回填建议值。",
+      "probeDirtyMessage": "配置已修改，建议重新测试并自动填写后再保存。",
+      "probeSuccessMessage": "测试通过，可以直接保存",
+      "probeAutofillAppliedMessage": "测试通过，已自动填写可确认的字段",
+      "probeAutofillSummary": "已将识别结果自动回填到表单",
+      "probeFailedFallback": "请检查 API Key、模型名和 Base URL 后重试",
+      "probeFailedInline": "测试未通过：{{error}}",
+      "probeRequestError": "请求失败：{{message}}",
+      "probeLatency": "延迟 {{latency}}ms",
+      "probeResolvedProvider": "识别提供商：{{provider}}",
+      "probeRecommendedModel": "建议模型：{{model}}",
+      "probeNormalizedBaseUrl": "规范地址：{{url}}",
+      "probeGatewayHint": "接口识别：{{hint}}",
+      "probeErrorCode": "错误码：{{code}}",
+      "gatewayHintLabel": "接口提示：",
+      "replyPreviewLabel": "返回预览：",
+      "probeAppliedFields": "已自动填写：{{fields}}",
+      "probeStates": {
+        "idle": "待测试",
+        "dirty": "需重测",
+        "testing": "测试中",
+        "test_success": "测试通过",
+        "test_failed": "测试失败",
+        "autofill_applied": "已自动填写"
+      },
+      "autofillField": {
+        "resolved_provider": "提供商",
+        "recommended_model": "模型",
+        "normalized_base_url": "Base URL"
+      },
+      "gatewayProfiles": {
+        "officialAnthropicCompatible": "Anthropic 兼容接口",
+        "officialOpenAICompatible": "OpenAI 兼容接口",
+        "officialOpenAIResponses": "OpenAI Responses 接口",
+        "customOpenAICompatible": "自定义 OpenAI 兼容接口",
+        "unknown": "未识别接口类型"
+      }
     },
     "tools": {
       "title": "全局工具管理",
