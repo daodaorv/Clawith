@@ -187,6 +187,16 @@ async def deliver_broadcast_emails(recipients: Iterable[BroadcastEmailRecipient]
             logger.warning("Failed to deliver broadcast email to %s: %s", recipient.email, exc)
 
 
+async def run_background_email_job(job, *args, **kwargs) -> None:
+    """Execute a background email job and isolate failures from the request path."""
+    try:
+        result = job(*args, **kwargs)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        logger.warning("Background email job failed: %s", exc)
+
+
 # ── Email Templates ──────────────────────────────────────────────────────────
 
 # Default templates for each email scenario.

@@ -12,10 +12,14 @@ from datetime import datetime, timezone
 from loguru import logger
 from sqlalchemy import select
 
+from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
 from app.database import async_session
 from app.models.agent import Agent
 from app.models.llm import LLMModel
 from app.models.task import Task, TaskLog
+
+settings = get_settings()
 
 
 async def execute_task(task_id: uuid.UUID, agent_id: uuid.UUID) -> None:
@@ -129,7 +133,7 @@ You are now in TASK EXECUTION MODE (not a conversation). A task has been assigne
     try:
         client = create_llm_client(
             provider=model.provider,
-            api_key=model.api_key_encrypted,
+            api_key=decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY),
             model=model.model,
             base_url=model.base_url,
             timeout=float(getattr(model, 'request_timeout', None) or 1200.0),

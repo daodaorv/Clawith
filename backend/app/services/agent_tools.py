@@ -36,6 +36,7 @@ from app.services.auth_registry import auth_provider_registry
 from app.services.channel_session import find_or_create_channel_session
 from app.services.channel_user_service import get_platform_user_by_org_member
 from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
 
 
 _settings = get_settings()
@@ -4428,7 +4429,7 @@ async def _send_message_to_agent(from_agent_id: uuid.UUID, args: dict) -> str:
 
             llm_client = create_llm_client(
                 provider=target_model.provider,
-                api_key=target_model.api_key_encrypted,
+                api_key=decrypt_data_or_return_plaintext(target_model.api_key_encrypted, _settings.SECRET_KEY),
                 model=target_model.model,
                 base_url=base_url,
                 timeout=float(getattr(target_model, 'request_timeout', None) or 120.0),

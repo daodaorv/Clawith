@@ -14,9 +14,13 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 from sqlalchemy import select
 
+from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
 from app.database import async_session
 from app.models.task import Task, TaskLog
 from app.models.agent import Agent
+
+settings = get_settings()
 
 # Schedule JSON format:
 # {"freq": "daily"|"weekly", "interval": N, "time": "HH:MM", "weekdays": [0-6]}
@@ -137,7 +141,7 @@ async def _get_agent_reply(target_agent, message: str, db) -> str | None:
 
     client = create_llm_client(
         provider=model.provider,
-        api_key=model.api_key_encrypted,
+        api_key=decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY),
         model=model.model,
         base_url=base_url,
         timeout=float(getattr(model, 'request_timeout', None) or 60.0),

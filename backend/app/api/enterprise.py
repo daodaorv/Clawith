@@ -9,7 +9,13 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_admin, get_current_user
+from app.config import get_settings
+from app.core.security import (
+    decrypt_data_or_return_plaintext,
+    encrypt_data_if_needed,
+    get_current_admin,
+    get_current_user,
+)
 from app.database import get_db
 from app.duoduo.skill_packs import FIRST_SCENARIO_ID, FIRST_SCENARIO_NAME_ZH, list_skill_packs
 from app.duoduo.template_library import get_template_library_catalog
@@ -46,6 +52,7 @@ from app.services.platform_service import platform_service
 from app.services.sso_service import sso_service
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 router = APIRouter(prefix="/enterprise", tags=["enterprise"])
 
@@ -97,7 +104,7 @@ async def _resolve_probe_api_key(data: LLMTestRequest, db: AsyncSession) -> str 
         result = await db.execute(select(LLMModel).where(LLMModel.id == data.model_id))
         existing = result.scalar_one_or_none()
         if existing:
-            api_key = existing.api_key_encrypted
+            api_key = decrypt_data_or_return_plaintext(existing.api_key_encrypted, settings.SECRET_KEY)
     return api_key
 
 
@@ -235,8 +242,8 @@ async def list_llm_models(
     models = []
     for m in result.scalars().all():
         out = LLMModelOut.model_validate(m)
-        # Mask API key: show last 4 chars
-        key = m.api_key_encrypted or ""
+        # Mask API key from the resolved plaintext tail, not the encrypted blob.
+        key = decrypt_data_or_return_plaintext(m.api_key_encrypted, settings.SECRET_KEY)
         out.api_key_masked = f"****{key[-4:]}" if len(key) > 4 else "****"
         models.append(out)
     return models
@@ -254,7 +261,7 @@ async def add_llm_model(
     model = LLMModel(
         provider=data.provider,
         model=data.model,
-        api_key_encrypted=data.api_key,  # TODO: encrypt
+        api_key_encrypted=encrypt_data_if_needed(data.api_key.strip(), settings.SECRET_KEY),
         base_url=data.base_url,
         label=data.label,
         temperature=data.temperature,
@@ -335,7 +342,7 @@ async def update_llm_model(
         if hasattr(data, 'base_url') and data.base_url is not None:
             model.base_url = data.base_url
         if data.api_key and data.api_key.strip() and not data.api_key.startswith('****'):  # Skip masked values
-            model.api_key_encrypted = data.api_key.strip()
+            model.api_key_encrypted = encrypt_data_if_needed(data.api_key.strip(), settings.SECRET_KEY)
         if data.temperature is not None:
             model.temperature = data.temperature
         if data.max_tokens_per_day is not None:

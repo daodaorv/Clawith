@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import decode_access_token
+from app.config import get_settings
+from app.core.security import decode_access_token, decrypt_data_or_return_plaintext
 from app.core.permissions import check_agent_access, is_agent_expired
 from app.database import async_session
 from app.models.agent import Agent
@@ -18,6 +19,7 @@ from app.models.llm import LLMModel
 from app.models.user import User
 
 router = APIRouter(tags=["websocket"])
+settings = get_settings()
 
 
 class ConnectionManager:
@@ -225,7 +227,7 @@ async def call_llm(
     try:
         client = create_llm_client(
             provider=model.provider,
-            api_key=model.api_key_encrypted,
+            api_key=decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY),
             model=model.model,
             base_url=model.base_url,
             timeout=float(getattr(model, 'request_timeout', None) or 120.0),
