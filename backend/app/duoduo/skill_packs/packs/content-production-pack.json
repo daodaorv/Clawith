@@ -1,0 +1,35 @@
+{
+  "pack_id": "content-production-pack",
+  "version": "v1",
+  "display_name_zh": "内容生产包",
+  "display_name_en": "Content Production Pack",
+  "business_goal": "完成选题、资料整理、结构化写作与内容初稿生成。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "recommended_roles": [
+    "Content Strategy Lead",
+    "Global Distribution Lead"
+  ],
+  "included_skills": [
+    "content-writing",
+    "web-research",
+    "competitive-analysis"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "knowledge-base"
+  ],
+  "default_prompts_or_policies": [
+    "默认输出中文提纲、中文初稿和发布建议。",
+    "需要引用观点时优先给出来源线索或待核实标记。"
+  ],
+  "compatibility_notes": "适合内容策划和脚本撰写，不替代人工审稿。",
+  "risk_level": "medium",
+  "acceptance_metrics": [
+    "能生成结构清晰的中文内容提纲。",
+    "能把 research 和 copy 统一到同一条工作链里。"
+  ],
+  "status": "internal-preview"
+}

@@ -1,0 +1,33 @@
+{
+  "pack_id": "customer-followup-pack",
+  "version": "v1",
+  "display_name_zh": "客服跟单包",
+  "display_name_en": "Customer Follow-up Pack",
+  "business_goal": "整理用户反馈、跟进线索并沉淀常见问题处理话术。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "recommended_roles": [
+    "Customer Follow-up Lead"
+  ],
+  "included_skills": [
+    "content-writing",
+    "data-analysis"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "crm"
+  ],
+  "default_prompts_or_policies": [
+    "默认先归类问题，再输出跟进动作。",
+    "所有用户沟通文案默认中文友好、克制承诺。"
+  ],
+  "compatibility_notes": "适合售前/售后跟进，不直接执行财务承诺。",
+  "risk_level": "medium",
+  "acceptance_metrics": [
+    "能输出 FAQ、分级处理和下一步动作。",
+    "能把线索优先级讲清楚。"
+  ],
+  "status": "internal-preview"
+}

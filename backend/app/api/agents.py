@@ -1,4 +1,4 @@
-"""Agent (Digital Employee) API routes."""
+﻿"""Agent (Digital Employee) API routes."""
 
 import hashlib
 import json
@@ -11,18 +11,183 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.duoduo.skill_packs import FIRST_SCENARIO_ID, list_skill_packs
+from app.duoduo.template_library import get_template_library_catalog
 from app.core.permissions import check_agent_access, is_agent_creator
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models.agent import Agent, AgentPermission
 from app.models.user import User
 from app.schemas.schemas import AgentCreate, AgentOut, AgentUpdate
+from app.services.duoduo_template_library import build_duoduo_template_metadata
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 def _serialize_dt(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _match_template_skill_ids(template_default_skills: list[str] | None, skills: list[object]) -> set[uuid.UUID]:
+    """Match template default skill slugs against seeded/global skill records by folder name."""
+    if not template_default_skills:
+        return set()
+
+    skill_id_by_folder = {
+        getattr(skill, "folder_name", ""): getattr(skill, "id", None)
+        for skill in skills
+        if getattr(skill, "folder_name", "")
+    }
+    return {
+        skill_id_by_folder[slug]
+        for slug in template_default_skills
+        if skill_id_by_folder.get(slug) is not None
+    }
+
+
+def _build_founder_mainline_model_ready_context(model: object | None) -> dict[str, str | None]:
+    if model is None or not getattr(model, "enabled", False):
+        return {}
+
+    return {
+        "resolved_provider": getattr(model, "provider", None),
+        "recommended_model": getattr(model, "model", None),
+        "normalized_base_url": getattr(model, "base_url", None),
+    }
+
+
+def _recompute_founder_mainline_server_plan(
+    data: AgentCreate,
+    founder_mainline_guard: object,
+    *,
+    model: object | None,
+):
+    from app.services.founder_mainline_service import generate_founder_mainline_draft_plan
+
+    business_brief = (getattr(data, "role_description", "") or "").strip()
+    if not business_brief:
+        return None
+
+    return generate_founder_mainline_draft_plan(
+        business_brief=business_brief,
+        scenario_id=getattr(founder_mainline_guard, "scenario_id", None) or FIRST_SCENARIO_ID,
+        model_ready_context=_build_founder_mainline_model_ready_context(model),
+        answers=list(getattr(founder_mainline_guard, "answers", []) or []),
+        correction_notes=getattr(founder_mainline_guard, "correction_notes", None),
+        user_confirmed=bool(getattr(founder_mainline_guard, "user_confirmed", False)),
+    )
+
+
+FOUNDER_CREATE_CONFIRMATION_REQUIRED_ZH = "\u7b49\u5f85\u7528\u6237\u660e\u786e\u786e\u8ba4\u5f53\u524d\u65b9\u6848"
+FOUNDER_CREATE_APPROVAL_BOUNDARIES_REQUIRED_ZH = "\u9700\u8981\u4eba\u5de5\u5ba1\u6279\u7684\u8fb9\u754c\u5c1a\u672a\u660e\u786e"
+FOUNDER_CREATE_UNMAPPED_TEMPLATE_ZH = "\u4ecd\u6709\u6a21\u677f\u63a8\u8350\u65e0\u6cd5\u6620\u5c04\u5230\u5f53\u524d catalog"
+FOUNDER_CREATE_UNMAPPED_PACK_ZH = "\u4ecd\u6709\u80fd\u529b\u5305\u63a8\u8350\u65e0\u6cd5\u6620\u5c04\u5230\u5f53\u524d catalog"
+FOUNDER_CREATE_MODEL_UNAVAILABLE_ZH = "\u6a21\u578b\u4e2d\u5fc3\u5f53\u524d\u672a\u5904\u4e8e\u53ef\u7528\u72b6\u6001"
+FOUNDER_CREATE_TEMPLATE_MISALIGNED_ZH = "\u5f53\u524d\u521b\u5efa\u8868\u5355\u672a\u5bf9\u9f50 founder \u63a8\u8350\u6a21\u677f"
+FOUNDER_CREATE_CONFLICT_PREFIX_ZH = "\u5f53\u524d founder \u63a8\u8350\u8fd8\u4e0d\u80fd\u76f4\u63a5\u521b\u5efa"
+
+
+async def _validate_founder_mainline_create_guard(
+    db: AsyncSession,
+    data: AgentCreate,
+) -> None:
+    """Reject founder-assisted creates until deploy-prep readiness is re-validated on the server."""
+    founder_mainline_guard = data.founder_mainline_guard
+    if not founder_mainline_guard or not getattr(founder_mainline_guard, "recommendation_applied", False):
+        return
+
+    from app.models.agent import AgentTemplate
+    from app.models.llm import LLMModel
+
+    catalog = get_template_library_catalog()
+    template_catalog_by_name = {
+        item["canonical_name"]: item
+        for item in catalog.get("role_templates", [])
+    }
+    template_result = await db.execute(select(AgentTemplate).where(AgentTemplate.id == data.template_id)) if data.template_id else None
+    template = template_result.scalar_one_or_none() if template_result is not None else None
+    selected_template_catalog = template_catalog_by_name.get(getattr(template, "name", "")) if template else None
+    selected_template_key = selected_template_catalog["template_key"] if selected_template_catalog else None
+
+    model_result = await db.execute(select(LLMModel).where(LLMModel.id == data.primary_model_id)) if data.primary_model_id else None
+    model = model_result.scalar_one_or_none() if model_result is not None else None
+
+    parts: list[str] = []
+    server_plan = _recompute_founder_mainline_server_plan(data, founder_mainline_guard, model=model)
+    if server_plan is not None:
+        parts.extend(list(server_plan.deployment_readiness.missing_items))
+        resolved_template_keys = list(server_plan.deployment_readiness.resolved_template_keys)
+    else:
+        if not getattr(founder_mainline_guard, "user_confirmed", False):
+            parts.append(FOUNDER_CREATE_CONFIRMATION_REQUIRED_ZH)
+
+        approval_boundaries = list(getattr(founder_mainline_guard, "approval_boundaries", []) or [])
+        if not approval_boundaries and selected_template_catalog:
+            approval_boundaries = list(selected_template_catalog.get("default_boundaries", []) or [])
+        if not approval_boundaries:
+            parts.append(FOUNDER_CREATE_APPROVAL_BOUNDARIES_REQUIRED_ZH)
+
+        valid_template_keys = {item["template_key"] for item in catalog.get("role_templates", [])}
+        resolved_template_keys = list(getattr(founder_mainline_guard, "resolved_template_keys", []) or [])
+        if not resolved_template_keys and selected_template_key:
+            resolved_template_keys = [selected_template_key]
+        if resolved_template_keys and any(item not in valid_template_keys for item in resolved_template_keys):
+            parts.append(FOUNDER_CREATE_UNMAPPED_TEMPLATE_ZH)
+
+        scenario_id = getattr(founder_mainline_guard, "scenario_id", None) or FIRST_SCENARIO_ID
+        valid_pack_ids = {item["pack_id"] for item in list_skill_packs(scenario=scenario_id)}
+        resolved_pack_ids = list(getattr(founder_mainline_guard, "resolved_pack_ids", []) or [])
+        if not resolved_pack_ids and selected_template_catalog:
+            resolved_pack_ids = list(selected_template_catalog.get("recommended_skill_packs", []) or [])
+        if resolved_pack_ids and any(item not in valid_pack_ids for item in resolved_pack_ids):
+            parts.append(FOUNDER_CREATE_UNMAPPED_PACK_ZH)
+
+        if model is None or not getattr(model, "enabled", False):
+            parts.append(FOUNDER_CREATE_MODEL_UNAVAILABLE_ZH)
+
+    if template is None or selected_template_key is None or selected_template_key not in resolved_template_keys:
+        parts.append(FOUNDER_CREATE_TEMPLATE_MISALIGNED_ZH)
+
+    parts = list(dict.fromkeys(part for part in parts if part))
+    if parts:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{FOUNDER_CREATE_CONFLICT_PREFIX_ZH}：{'；'.join(parts)}",
+        )
+
+
+async def _collect_requested_skill_ids(
+    db: AsyncSession,
+    *,
+    explicit_skill_ids: list[uuid.UUID] | None,
+    template_id: uuid.UUID | None,
+) -> set[uuid.UUID]:
+    """Merge user-selected, globally default, and template-default skill IDs."""
+    from app.models.agent import AgentTemplate
+    from app.models.skill import Skill
+
+    requested_skill_ids = set(explicit_skill_ids or [])
+
+    default_result = await db.execute(select(Skill).where(Skill.is_default))
+    requested_skill_ids |= {skill.id for skill in default_result.scalars().all()}
+
+    if not template_id:
+        return requested_skill_ids
+
+    template_result = await db.execute(select(AgentTemplate).where(AgentTemplate.id == template_id))
+    template = template_result.scalar_one_or_none()
+    template_default_skills = list(getattr(template, "default_skills", []) or [])
+    if not template_default_skills:
+        return requested_skill_ids
+
+    template_skill_result = await db.execute(
+        select(Skill).where(Skill.folder_name.in_(template_default_skills))
+    )
+    requested_skill_ids |= _match_template_skill_ids(
+        template_default_skills,
+        template_skill_result.scalars().all(),
+    )
+    return requested_skill_ids
 
 
 async def _archive_agent_task_history(db: AsyncSession, agent_id: uuid.UUID, archive_dir: Path) -> Path | None:
@@ -127,6 +292,7 @@ async def list_templates(
             "soul_template": t.soul_template,
             "default_skills": t.default_skills,
             "default_autonomy_policy": t.default_autonomy_policy,
+            **build_duoduo_template_metadata(t),
         }
         for t in templates
     ]
@@ -198,6 +364,8 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new digital employee (any authenticated user)."""
+    await _validate_founder_mainline_create_guard(db, data)
+
     # Check agent creation quota
     from app.services.quota_guard import check_agent_creation_quota, QuotaExceeded
     try:
@@ -279,7 +447,7 @@ async def create_agent(
             for scope_id in data.permission_scope_ids:
                 db.add(AgentPermission(agent_id=agent.id, scope_type="user", scope_id=scope_id, access_level=access_level))
         else:
-            # "仅自己" — insert creator as the only permitted user
+            # "浠呰嚜宸? 鈥?insert creator as the only permitted user
             db.add(AgentPermission(agent_id=agent.id, scope_type="user", scope_id=current_user.id, access_level="manage"))
 
     await db.flush()
@@ -306,14 +474,11 @@ async def create_agent(
     from app.models.skill import Skill
     from sqlalchemy.orm import selectinload
 
-    # Always include default skills
-    default_result = await db.execute(
-        select(Skill).where(Skill.is_default)
+    all_skill_ids = await _collect_requested_skill_ids(
+        db,
+        explicit_skill_ids=data.skill_ids,
+        template_id=data.template_id,
     )
-    default_ids = {s.id for s in default_result.scalars().all()}
-
-    # Merge user-selected + default skill IDs
-    all_skill_ids = set(data.skill_ids or []) | default_ids
 
     if all_skill_ids:
         agent_dir = agent_manager._agent_dir(agent.id)
@@ -372,7 +537,7 @@ async def get_agent(
         creator = creator_result.scalar_one_or_none()
         out["creator_username"] = creator.username if creator else None
 
-    # Resolve effective timezone (agent → tenant → UTC)
+    # Resolve effective timezone (agent 鈫?tenant 鈫?UTC)
     effective_tz = agent.timezone
     if not effective_tz and agent.tenant_id:
         from app.models.tenant import Tenant
@@ -453,7 +618,7 @@ async def update_agent_permissions(
             for sid in scope_ids:
                 db.add(AgentPermission(agent_id=agent_id, scope_type="user", scope_id=uuid.UUID(sid), access_level=access_level))
         else:
-            # "仅自己"
+            # "浠呰嚜宸?
             db.add(AgentPermission(agent_id=agent_id, scope_type="user", scope_id=current_user.id, access_level="manage"))
 
     await db.commit()
@@ -692,7 +857,7 @@ async def stop_agent(
     return AgentOut.model_validate(agent)
 
 
-# ─── Agent-Level Approvals ──────────────────────────────
+# 鈹€鈹€鈹€ Agent-Level Approvals 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @router.get("/{agent_id}/approvals")
@@ -756,7 +921,7 @@ async def resolve_agent_approval(
     }
 
 
-# ─── OpenClaw API Key Management ────────────────────────
+# 鈹€鈹€鈹€ OpenClaw API Key Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @router.post("/{agent_id}/api-key")

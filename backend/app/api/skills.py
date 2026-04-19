@@ -11,10 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
-from app.models.skill import Skill, SkillFile
+from app.duoduo.skill_packs import FIRST_SCENARIO_ID, FIRST_SCENARIO_NAME_ZH, get_skill_pack, list_skill_packs
 from app.core.security import get_current_admin, get_current_user, require_role
+from app.models.skill import Skill, SkillFile
 from app.models.user import User
-from loguru import logger
+from app.services.duoduo_skill_pack_library import build_duoduo_skill_metadata
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -530,9 +531,39 @@ async def list_skills(current_user: User = Depends(get_current_user)):
                 "is_builtin": s.is_builtin,
                 "is_default": s.is_default,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
+                **build_duoduo_skill_metadata(s),
             }
             for s in skills
         ]
+
+
+@router.get("/packs")
+async def list_skill_pack_catalog(
+    scenario: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """List read-only Duoduo skill packs for the current scenario."""
+    packs = list_skill_packs(scenario=scenario)
+    return {
+        "scenario": {
+            "scenario_id": scenario or FIRST_SCENARIO_ID,
+            "display_name_zh": FIRST_SCENARIO_NAME_ZH,
+        },
+        "count": len(packs),
+        "items": packs,
+    }
+
+
+@router.get("/packs/{pack_id}")
+async def get_skill_pack_catalog(
+    pack_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get a single read-only Duoduo skill pack."""
+    pack = get_skill_pack(pack_id)
+    if not pack:
+        raise HTTPException(404, "Skill pack not found")
+    return pack
 
 
 @router.get("/{skill_id}")

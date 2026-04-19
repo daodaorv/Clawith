@@ -1,0 +1,35 @@
+{
+  "pack_id": "founder-strategy-pack",
+  "version": "v1",
+  "display_name_zh": "创业策略包",
+  "display_name_en": "Founder Strategy Pack",
+  "business_goal": "把中文业务目标拆成可执行的出海内容、增长与优先级方案。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "recommended_roles": [
+    "Founder Copilot"
+  ],
+  "included_skills": [
+    "web-research",
+    "competitive-analysis",
+    "data-analysis",
+    "content-writing"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "knowledge-base"
+  ],
+  "default_prompts_or_policies": [
+    "默认用中文澄清业务目标，再输出结构化行动方案。",
+    "优先给出可执行的阶段拆分和风险提示。"
+  ],
+  "compatibility_notes": "适合 CEO/Founder 视角，不直接替代具体执行岗位。",
+  "risk_level": "medium",
+  "acceptance_metrics": [
+    "能从中文业务 brief 产出阶段目标、关键任务与优先级。",
+    "能指出资料缺口并要求继续补充，而不是直接幻觉填空。"
+  ],
+  "status": "internal-preview"
+}

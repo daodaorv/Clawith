@@ -5,6 +5,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.schemas.founder_mainline import FounderMainlineInterviewAnswer
+
 
 # ─── Auth ───────────────────────────────────────────────
 
@@ -202,6 +204,20 @@ class UserUpdate(BaseModel):
 
 # ─── Agent ──────────────────────────────────────────────
 
+class FounderMainlineCreateGuard(BaseModel):
+    recommendation_applied: bool = False
+    can_enter_deploy_prep: bool = False
+    blocker_reason_zh: str = ""
+    missing_items: list[str] = []
+    user_confirmed: bool = False
+    scenario_id: str | None = None
+    answers: list[FounderMainlineInterviewAnswer] = []
+    correction_notes: str | None = None
+    resolved_template_keys: list[str] = []
+    resolved_pack_ids: list[str] = []
+    approval_boundaries: list[str] = []
+
+
 class AgentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100, description="Agent name, 2-100 characters")
     agent_type: str = "native"  # native | openclaw
@@ -230,6 +246,8 @@ class AgentCreate(BaseModel):
     max_tokens_per_month: int | None = None
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
+    # Optional founder-mainline deploy-prep gate forwarded by AgentCreate.
+    founder_mainline_guard: FounderMainlineCreateGuard | None = None
 
 
 class AgentOut(BaseModel):

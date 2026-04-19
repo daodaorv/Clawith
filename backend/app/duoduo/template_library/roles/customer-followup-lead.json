@@ -1,0 +1,34 @@
+{
+  "template_key": "customer-followup-lead",
+  "canonical_name": "Customer Follow-up Lead",
+  "display_name_zh": "客服跟单负责人",
+  "role_level": "lead",
+  "role_type": "operations",
+  "primary_goal": "归类用户反馈、沉淀 FAQ、推动高优先级线索跟进。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "business_stage": [
+    "1-10"
+  ],
+  "recommended_model_family": [
+    "deepseek",
+    "qwen"
+  ],
+  "default_autonomy_level": "L2",
+  "default_boundaries": [
+    "退款、赔付、法律承诺必须人工处理"
+  ],
+  "recommended_skill_packs": [
+    "customer-followup-pack",
+    "report-output-pack"
+  ],
+  "coordination_pattern_ids": [
+    "customer-feedback-escalation-loop"
+  ],
+  "source_ids": [
+    "agency-agents",
+    "crewai"
+  ],
+  "validation_status": "internal-preview"
+}
