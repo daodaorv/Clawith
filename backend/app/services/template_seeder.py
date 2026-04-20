@@ -1,12 +1,13 @@
 """Seed default agent templates into the database on startup."""
 
 from loguru import logger
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from app.database import async_session
 from app.models.agent import AgentTemplate
+from app.duoduo.template_library import get_builtin_agent_templates
 
 
-DEFAULT_TEMPLATES = [
+_BASE_DEFAULT_TEMPLATES = [
     {
         "name": "Project Manager",
         "description": "Manages project timelines, task delegation, cross-team coordination, and progress reporting",
@@ -156,6 +157,8 @@ DEFAULT_TEMPLATES = [
     },
 ]
 
+DEFAULT_TEMPLATES = _BASE_DEFAULT_TEMPLATES + get_builtin_agent_templates()
+
 
 async def seed_agent_templates():
     """Insert default agent templates if they don't exist. Update stale ones."""
@@ -168,7 +171,7 @@ async def seed_agent_templates():
 
             current_names = {t["name"] for t in DEFAULT_TEMPLATES}
             result = await db.execute(
-                select(AgentTemplate).where(AgentTemplate.is_builtin == True)
+                select(AgentTemplate).where(AgentTemplate.is_builtin)
             )
             existing_builtins = result.scalars().all()
             for old in existing_builtins:
@@ -188,7 +191,7 @@ async def seed_agent_templates():
                 result = await db.execute(
                     select(AgentTemplate).where(
                         AgentTemplate.name == tmpl["name"],
-                        AgentTemplate.is_builtin == True,
+                        AgentTemplate.is_builtin,
                     )
                 )
                 existing = result.scalar_one_or_none()

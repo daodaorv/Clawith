@@ -1,34 +1,58 @@
 """Enterprise management API routes: LLM pool, enterprise info, approvals, audit logs."""
 
-import uuid
 import logging
+import uuid
 
-logger = logging.getLogger(__name__)
-
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select, func, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_admin, get_current_user, require_role
+from app.config import get_settings
+from app.core.security import (
+    decrypt_data_or_return_plaintext,
+    encrypt_data_if_needed,
+    get_current_admin,
+    get_current_user,
+)
 from app.database import get_db
-from app.models.org import OrgDepartment, OrgMember
-from app.models.identity import IdentityProvider
-from app.models.user import User
+from app.duoduo.skill_packs import FIRST_SCENARIO_ID, FIRST_SCENARIO_NAME_ZH, list_skill_packs
+from app.duoduo.template_library import get_template_library_catalog
 from app.models.agent import Agent
+from app.models.audit import ApprovalRequest, AuditLog, EnterpriseInfo
+from app.models.identity import IdentityProvider
+from app.models.invitation_code import InvitationCode
 from app.models.llm import LLMModel
-from app.models.audit import AuditLog, ApprovalRequest, EnterpriseInfo
+from app.models.org import OrgDepartment, OrgMember
+from app.models.system_settings import SystemSetting
+from app.models.tenant import Tenant
+from app.models.user import User
+from app.schemas.founder_mainline import (
+    FounderMainlineDraftPlanRequest,
+    FounderMainlineInterviewProgressRequest,
+)
 from app.schemas.schemas import (
-    ApprovalAction, ApprovalRequestOut, AuditLogOut, EnterpriseInfoOut,
-    EnterpriseInfoUpdate, LLMModelCreate, LLMModelOut, LLMModelUpdate,
-    IdentityProviderOut, UserInviteRequest
+    ApprovalAction,
+    ApprovalRequestOut,
+    AuditLogOut,
+    EnterpriseInfoOut,
+    EnterpriseInfoUpdate,
+    IdentityProviderOut,
+    LLMModelCreate,
+    LLMModelOut,
+    LLMModelUpdate,
+    UserInviteRequest,
 )
 from app.services.autonomy_service import autonomy_service
 from app.services.enterprise_sync import enterprise_sync_service
+from app.services.llm_probe import ProbeInput, run_llm_probe
 from app.services.llm_utils import get_provider_manifest
 from app.services.platform_service import platform_service
 from app.services.sso_service import sso_service
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 router = APIRouter(prefix="/enterprise", tags=["enterprise"])
 
@@ -74,6 +98,65 @@ class LLMTestRequest(BaseModel):
     model_id: str | None = None  # existing model ID to use stored API key
 
 
+async def _resolve_probe_api_key(data: LLMTestRequest, db: AsyncSession) -> str | None:
+    api_key = data.api_key if data.api_key and not data.api_key.startswith("****") else None
+    if not api_key and data.model_id:
+        result = await db.execute(select(LLMModel).where(LLMModel.id == data.model_id))
+        existing = result.scalar_one_or_none()
+        if existing:
+            api_key = decrypt_data_or_return_plaintext(existing.api_key_encrypted, settings.SECRET_KEY)
+    return api_key
+
+
+@router.post("/llm-probe")
+async def probe_llm_model(
+    data: LLMTestRequest,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Probe an LLM configuration and return structured normalization and capability data."""
+    api_key = await _resolve_probe_api_key(data, db)
+    if not api_key:
+        return {
+            "success": False,
+            "resolved_provider": None,
+            "protocol": None,
+            "recommended_model": None,
+            "normalized_base_url": data.base_url,
+            "base_url_source": "api_input" if data.base_url else "none",
+            "supports_completion": False,
+            "supports_stream": False,
+            "supports_tool_call": False,
+            "supports_reasoning_signal": False,
+            "requires_manual_model_id": False,
+            "supports_vision": False,
+            "supports_structured_output": False,
+            "registry_declared_capabilities": {},
+            "probe_observed_capabilities": {
+                "supports_completion": False,
+                "supports_stream": False,
+                "supports_tool_call": False,
+            },
+            "gateway_profile": "unknown",
+            "gateway_hint": "请先提供可用的 API Key。",
+            "error_code": "PROBE_AUTH_FAILED",
+            "error_message": "API Key is required",
+            "warnings": [],
+            "latency_ms": 0,
+            "reply_preview": "",
+            "autofill": {"applied_fields": []},
+        }
+
+    return await run_llm_probe(
+        ProbeInput(
+            provider=data.provider,
+            model=data.model,
+            api_key=api_key,
+            base_url=data.base_url or None,
+        )
+    )
+
+
 @router.post("/llm-test")
 async def test_llm_model(
     data: LLMTestRequest,
@@ -81,40 +164,62 @@ async def test_llm_model(
     db: AsyncSession = Depends(get_db),
 ):
     """Test an LLM model configuration by making a simple API call."""
-    import time
-    from app.services.llm_client import create_llm_client
+    probe_result = await probe_llm_model(data, current_user=current_user, db=db)
+    if probe_result.get("success"):
+        return {
+            "success": True,
+            "latency_ms": probe_result.get("latency_ms", 0),
+            "reply": probe_result.get("reply_preview", ""),
+            "resolved_provider": probe_result.get("resolved_provider"),
+            "normalized_base_url": probe_result.get("normalized_base_url"),
+        }
+    return {
+        "success": False,
+        "latency_ms": probe_result.get("latency_ms", 0),
+        "error": probe_result.get("error_message", "Unknown error"),
+        "error_code": probe_result.get("error_code"),
+        "resolved_provider": probe_result.get("resolved_provider"),
+        "normalized_base_url": probe_result.get("normalized_base_url"),
+    }
 
-    # Resolve API key: use provided key, or look up from stored model
-    api_key = data.api_key if data.api_key and not data.api_key.startswith('****') else None
-    if not api_key and data.model_id:
-        result = await db.execute(select(LLMModel).where(LLMModel.id == data.model_id))
-        existing = result.scalar_one_or_none()
-        if existing:
-            api_key = existing.api_key_encrypted
-    if not api_key:
-        return {"success": False, "latency_ms": 0, "error": "API Key is required"}
 
-    start = time.time()
-    try:
-        client = create_llm_client(
-            provider=data.provider,
-            model=data.model,
-            api_key=api_key,
-            base_url=data.base_url or None,
-        )
-        # Simple test: ask model to say "ok"
-        from app.services.llm_client import LLMMessage
-        response = await client.complete(
-            messages=[LLMMessage(role="user", content="Say 'ok' and nothing else.")],
-            max_tokens=16,
-        )
-        latency_ms = int((time.time() - start) * 1000)
-        reply = (response.content or "")[:100] if response else ""
-        return {"success": True, "latency_ms": latency_ms, "reply": reply}
-    except Exception as e:
-        latency_ms = int((time.time() - start) * 1000)
-        return {"success": False, "latency_ms": latency_ms, "error": str(e)[:500]}
 
+@router.get("/duoduo/template-library")
+async def get_duoduo_template_library(
+    scenario: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the Chinese-first Duoduo template library for enterprise settings."""
+    catalog = get_template_library_catalog(scenario=scenario)
+    return {
+        "version": catalog["version"],
+        "scenario": {
+            "scenario_id": scenario or FIRST_SCENARIO_ID,
+            "display_name_zh": FIRST_SCENARIO_NAME_ZH,
+        },
+        "count": len(catalog["role_templates"]),
+        "items": catalog["role_templates"],
+        "sources": catalog["sources"],
+        "coordination_patterns": catalog["coordination_patterns"],
+        "skill_pack_refs": catalog["skill_pack_refs"],
+    }
+
+
+@router.get("/duoduo/skill-packs")
+async def get_duoduo_skill_packs(
+    scenario: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Return the Chinese-first Duoduo skill-pack catalog for enterprise settings."""
+    packs = list_skill_packs(scenario=scenario)
+    return {
+        "scenario": {
+            "scenario_id": scenario or FIRST_SCENARIO_ID,
+            "display_name_zh": FIRST_SCENARIO_NAME_ZH,
+        },
+        "count": len(packs),
+        "items": packs,
+    }
 
 
 @router.get("/llm-models", response_model=list[LLMModelOut])
@@ -137,8 +242,8 @@ async def list_llm_models(
     models = []
     for m in result.scalars().all():
         out = LLMModelOut.model_validate(m)
-        # Mask API key: show last 4 chars
-        key = m.api_key_encrypted or ""
+        # Mask API key from the resolved plaintext tail, not the encrypted blob.
+        key = decrypt_data_or_return_plaintext(m.api_key_encrypted, settings.SECRET_KEY)
         out.api_key_masked = f"****{key[-4:]}" if len(key) > 4 else "****"
         models.append(out)
     return models
@@ -156,7 +261,7 @@ async def add_llm_model(
     model = LLMModel(
         provider=data.provider,
         model=data.model,
-        api_key_encrypted=data.api_key,  # TODO: encrypt
+        api_key_encrypted=encrypt_data_if_needed(data.api_key.strip(), settings.SECRET_KEY),
         base_url=data.base_url,
         label=data.label,
         temperature=data.temperature,
@@ -186,7 +291,6 @@ async def remove_llm_model(
         raise HTTPException(status_code=404, detail="Model not found")
 
     # Check if any agents reference this model
-    from sqlalchemy import or_
     ref_result = await db.execute(
         select(Agent.name).where(
             or_(Agent.primary_model_id == model_id, Agent.fallback_model_id == model_id)
@@ -238,7 +342,7 @@ async def update_llm_model(
         if hasattr(data, 'base_url') and data.base_url is not None:
             model.base_url = data.base_url
         if data.api_key and data.api_key.strip() and not data.api_key.startswith('****'):  # Skip masked values
-            model.api_key_encrypted = data.api_key.strip()
+            model.api_key_encrypted = encrypt_data_if_needed(data.api_key.strip(), settings.SECRET_KEY)
         if data.temperature is not None:
             model.temperature = data.temperature
         if data.max_tokens_per_day is not None:
@@ -255,7 +359,7 @@ async def update_llm_model(
         await db.commit()
         await db.refresh(model)
         return LLMModelOut.model_validate(model)
-    except SQLAlchemyError as e:
+    except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update model")
 
@@ -389,7 +493,7 @@ async def get_enterprise_stats(
 
     # Base queries
     agent_q = select(func.count(Agent.id))
-    user_q = select(func.count(User.id)).where(User.is_active == True)
+    user_q = select(func.count(User.id)).where(User.is_active)
     approval_q = select(func.count(ApprovalRequest.id))
 
     if tid:
@@ -418,10 +522,6 @@ async def get_enterprise_stats(
 
 
 # ─── Tenant Quota Settings ──────────────────────────────
-
-from app.models.tenant import Tenant
-
-
 class TenantQuotaUpdate(BaseModel):
     default_message_limit: int | None = None
     default_message_period: str | None = None
@@ -587,10 +687,6 @@ async def update_email_templates_endpoint(
 
 
 # ─── System Settings ───────────────────────────────────
-
-from app.models.system_settings import SystemSetting
-
-
 class SettingUpdate(BaseModel):
     value: dict
 
@@ -669,8 +765,8 @@ async def _sync_tenant_sso_state(db: AsyncSession, tenant_id: uuid.UUID):
     count_result = await db.execute(
         select(func.count(IdentityProvider.id)).where(
             IdentityProvider.tenant_id == tenant_id,
-            IdentityProvider.sso_login_enabled == True,
-            IdentityProvider.is_active == True,
+            IdentityProvider.sso_login_enabled,
+            IdentityProvider.is_active,
         )
     )
     active_sso_count = count_result.scalar() or 0
@@ -1139,10 +1235,6 @@ async def delete_identity_provider(
 
 
 # ─── Org Structure ──────────────────────────────────────
-
-from app.models.org import OrgDepartment, OrgMember
-
-
 @router.get("/org/departments")
 async def list_org_departments(
     tenant_id: str | None = None,
@@ -1205,10 +1297,6 @@ async def list_org_departments(
         ],
         "total_member": total_member,
     }
-
-
-
-from sqlalchemy import or_
 
 @router.get("/org/members")
 async def list_org_members(
@@ -1329,10 +1417,6 @@ async def trigger_org_sync(
 
 
 # ─── Invitation Codes ───────────────────────────────────
-
-from app.models.invitation_code import InvitationCode
-
-
 class InvitationCodeCreate(BaseModel):
     count: int = 1       # how many codes to generate
     max_uses: int = 1    # max registrations per code
@@ -1543,3 +1627,54 @@ async def deactivate_invitation_code(
     code.is_active = False
     await db.commit()
     return {"status": "deactivated"}
+@router.post("/duoduo/founder-mainline/draft-plan")
+async def create_duoduo_founder_mainline_draft_plan(
+    payload: FounderMainlineDraftPlanRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    from app.services.founder_mainline_service import (
+        build_founder_mainline_interview_progress,
+        generate_founder_mainline_draft_plan,
+    )
+
+    progress = build_founder_mainline_interview_progress(
+        payload.business_brief,
+        model_ready_context=payload.model_ready_context,
+        answers=payload.answers,
+    )
+    if progress.plan_status != "ready_for_plan":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "创业导师主链尚未达到生成草案的条件，请先补齐关键信息。",
+                "plan_status": progress.plan_status,
+                "missing_groups": progress.missing_groups,
+                "next_questions": [item.model_dump() for item in progress.next_questions],
+            },
+        )
+
+    plan = generate_founder_mainline_draft_plan(
+        payload.business_brief,
+        locale=payload.locale,
+        scenario_id=payload.scenario_id,
+        model_ready_context=payload.model_ready_context,
+        answers=payload.answers,
+        correction_notes=payload.correction_notes,
+        user_confirmed=payload.user_confirmed,
+    )
+    return plan.model_dump()
+
+
+@router.post("/duoduo/founder-mainline/interview-progress")
+async def create_duoduo_founder_mainline_interview_progress(
+    payload: FounderMainlineInterviewProgressRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    from app.services.founder_mainline_service import build_founder_mainline_interview_progress
+
+    progress = build_founder_mainline_interview_progress(
+        payload.business_brief,
+        model_ready_context=payload.model_ready_context,
+        answers=payload.answers,
+    )
+    return progress.model_dump()

@@ -2,64 +2,83 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agentApi, channelApi, enterpriseApi, skillApi } from '../services/api';
+import {
+    agentApi,
+    buildFounderMainlineAgentCreateSummary,
+    buildFounderMainlinePlanningPayload,
+    channelApi,
+    enterpriseApi,
+    FOUNDER_MAINLINE_INTERVIEW_FIELDS,
+    FOUNDER_MAINLINE_INTERVIEW_TOTAL_GROUPS,
+    getFounderMainlineStateLabel,
+    requestFounderMainlineDraftPlanPreview,
+    requestFounderMainlineInterviewProgress,
+    skillApi,
+    type DuoduoTemplateLibraryItem,
+    type FounderMainlineInterviewAnswerMap,
+    type FounderMainlineInterviewGroupId,
+    type SkillLibraryItem,
+    type SkillPackCatalogItem,
+} from '../services/api';
+import {
+    parseSoulTemplate,
+    resolveFounderMainlineAgentCreateAutofill,
+    resolveFounderMainlineAgentCreateGuard,
+} from '../services/founderMainlineDraftPlanSummary';
 import ChannelConfig from '../components/ChannelConfig';
 import LinearCopyButton from '../components/LinearCopyButton';
 const STEPS = ['basicInfo', 'personality', 'skills', 'permissions', 'channel'] as const;
 const OPENCLAW_STEPS = ['basicInfo', 'permissions'] as const;
 
-/**
- * Generic parser for soul_template markdown format.
- * Extracts content from sections by header names (## Header Name).
- * 
- * @param soulTemplate - The markdown template string
- * @param sectionNames - Array of section names to extract (e.g., ['Personality', 'Boundaries'])
- * @returns Object with extracted section contents (lowercase keys)
- * 
- * @example
- * const sections = parseSoulTemplate(markdown, ['Personality', 'Boundaries', 'Identity']);
- * // Returns: { personality: '...', boundaries: '...', identity: '...' }
- */
-function parseSoulTemplate(soulTemplate: string, sectionNames: string[] = []): Record<string, string> {
-    if (!soulTemplate) {
-        const empty: Record<string, string> = {};
-        sectionNames.forEach(name => {
-            empty[name.toLowerCase()] = '';
-        });
-        return empty;
-    }
-
-    const result: Record<string, string> = {};
-    
-    // Initialize all requested sections as empty
-    sectionNames.forEach(name => {
-        result[name.toLowerCase()] = '';
-    });
-
-    // Split by markdown ## headers
-    const sections = soulTemplate.split(/^##\s+/m);
-
-    for (let i = 0; i < sections.length; i++) {
-        const section = sections[i].trim();
-        const firstLineEnd = section.indexOf('\n');
-        const headerName = firstLineEnd > 0 ? section.slice(0, firstLineEnd).trim() : section.trim();
-        const content = firstLineEnd > 0 ? section.slice(firstLineEnd + 1).trim() : '';
-
-        // If this header matches one of our requested sections
-        const matchedSection = sectionNames.find(name => 
-            name.toLowerCase() === headerName.toLowerCase()
-        );
-        
-        if (matchedSection) {
-            result[matchedSection.toLowerCase()] = content;
+function sortTemplates(items: any[]) {
+    return [...items].sort((a, b) => {
+        if (!!a.recommended_for_first_scenario !== !!b.recommended_for_first_scenario) {
+            return a.recommended_for_first_scenario ? -1 : 1;
         }
-    }
+        if (!!a.duoduo_recommended !== !!b.duoduo_recommended) {
+            return a.duoduo_recommended ? -1 : 1;
+        }
+        if ((a.sort_order ?? 999) !== (b.sort_order ?? 999)) {
+            return (a.sort_order ?? 999) - (b.sort_order ?? 999);
+        }
+        if (!!a.is_builtin !== !!b.is_builtin) {
+            return a.is_builtin ? -1 : 1;
+        }
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+}
 
-    return result;
+function sortSkills(items: any[]) {
+    return [...items].sort((a, b) => {
+        if (!!a.is_default !== !!b.is_default) {
+            return a.is_default ? -1 : 1;
+        }
+        if (!!a.recommended_for_first_scenario !== !!b.recommended_for_first_scenario) {
+            return a.recommended_for_first_scenario ? -1 : 1;
+        }
+        if (!!a.duoduo_recommended !== !!b.duoduo_recommended) {
+            return a.duoduo_recommended ? -1 : 1;
+        }
+        if ((a.sort_order ?? 999) !== (b.sort_order ?? 999)) {
+            return (a.sort_order ?? 999) - (b.sort_order ?? 999);
+        }
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+}
+
+function resolveTemplateIncludedSkillIds(template: any, skills: any[]) {
+    if (!template?.default_skills?.length || !skills.length) {
+        return new Set<string>();
+    }
+    return new Set(
+        skills
+            .filter((skill: SkillLibraryItem) => template.default_skills.includes(skill.folder_name))
+            .map((skill: SkillLibraryItem) => skill.id),
+    );
 }
 
 export default function AgentCreate() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [step, setStep] = useState(0);
@@ -87,6 +106,10 @@ export default function AgentCreate() {
         skill_ids: [] as string[],
     });
     const [channelValues, setChannelValues] = useState<Record<string, string>>({});
+    const [founderMainlineAnswers, setFounderMainlineAnswers] = useState<FounderMainlineInterviewAnswerMap>({});
+    const [founderMainlineCorrectionNotes, setFounderMainlineCorrectionNotes] = useState('');
+    const [founderMainlineUserConfirmed, setFounderMainlineUserConfirmed] = useState(false);
+    const [founderMainlineRecommendationApplied, setFounderMainlineRecommendationApplied] = useState(false);
 
     // Fetch LLM models for step 1
     const { data: models = [] } = useQuery({
@@ -104,6 +127,14 @@ export default function AgentCreate() {
     const { data: globalSkills = [] } = useQuery({
         queryKey: ['global-skills'],
         queryFn: skillApi.list,
+    });
+    const { data: duoduoTemplateLibrary } = useQuery({
+        queryKey: ['duoduo-template-library', 'agent-create'],
+        queryFn: () => enterpriseApi.duoduoTemplateLibrary(),
+    });
+    const { data: duoduoSkillPackCatalog } = useQuery({
+        queryKey: ['duoduo-skill-packs', 'agent-create'],
+        queryFn: () => skillApi.packs.list(),
     });
 
     // Auto-select default skills
@@ -250,6 +281,10 @@ export default function AgentCreate() {
         if (step === 0 || agentType === 'openclaw') {
             if (!validateStep0()) return;
         }
+        if (agentType === 'native' && founderMainlineCreateGuard.isBlocked) {
+            setError(founderMainlineCreateGuard.message);
+            return;
+        }
         createMutation.mutate({
             name: form.name,
             agent_type: agentType,
@@ -265,11 +300,184 @@ export default function AgentCreate() {
             skill_ids: agentType === 'native' ? form.skill_ids : [],
             permission_access_level: form.permission_access_level,
             tenant_id: currentTenant || undefined,
+            founder_mainline_guard: (
+                agentType === 'native'
+                && founderMainlineRecommendationApplied
+                && founderMainlinePreviewMutation.data
+            ) ? {
+                recommendation_applied: true,
+                user_confirmed: founderMainlineUserConfirmed,
+                scenario_id: founderMainlinePreviewMutation.data.scenario_id,
+                answers: founderMainlinePlanningPayload.answers,
+                ...(founderMainlineCorrectionNotes.trim()
+                    ? { correction_notes: founderMainlineCorrectionNotes.trim() }
+                    : {}),
+            } : undefined,
         });
     };
 
     const selectedModel = models.find((m: any) => m.id === form.primary_model_id);
+    const isChineseUi = i18n.language?.toLowerCase().startsWith('zh');
+    const templateCards = sortTemplates(templates as any[]);
+    const skillCards = sortSkills(globalSkills as any[]);
+    const selectedTemplate = templateCards.find((tmpl: any) => tmpl.id === form.template_id);
+    const templateIncludedSkillIds = resolveTemplateIncludedSkillIds(selectedTemplate, globalSkills as SkillLibraryItem[]);
+    const templateIncludedSkills = skillCards.filter((skill: SkillLibraryItem) => templateIncludedSkillIds.has(skill.id));
+    const selectedTemplateLibraryItem = duoduoTemplateLibrary?.items?.find(
+        (item: DuoduoTemplateLibraryItem) => item.canonical_name === selectedTemplate?.name,
+    );
+    const selectedTemplateRecommendedPacks = (selectedTemplateLibraryItem?.recommended_skill_packs || [])
+        .map((packId: string) => duoduoSkillPackCatalog?.items?.find((pack: SkillPackCatalogItem) => pack.pack_id === packId))
+        .filter((pack): pack is SkillPackCatalogItem => Boolean(pack));
+    const founderMainlinePlanningPayload = buildFounderMainlinePlanningPayload({
+        businessBrief: form.role_description,
+        locale: isChineseUi ? 'zh-CN' : (i18n.language || 'en'),
+        scenarioId: duoduoTemplateLibrary?.scenario?.scenario_id,
+        selectedModel: selectedModel
+            ? {
+                provider: selectedModel.provider,
+                model: selectedModel.model,
+                base_url: selectedModel.base_url,
+            }
+            : null,
+        answersByGroup: founderMainlineAnswers,
+    });
+    const founderMainlineInterviewProgressMutation = useMutation({
+        mutationFn: async () => requestFounderMainlineInterviewProgress(founderMainlinePlanningPayload),
+    });
+    const founderMainlineDraftPlanPayload = {
+        ...founderMainlinePlanningPayload,
+        user_confirmed: founderMainlineUserConfirmed,
+        ...(founderMainlineCorrectionNotes.trim()
+            ? { correction_notes: founderMainlineCorrectionNotes.trim() }
+            : {}),
+    };
+    const skillLabelByFolderName = Object.fromEntries(
+        skillCards.map((skill: SkillLibraryItem) => [
+            skill.folder_name,
+            isChineseUi ? (skill.display_name_zh || skill.name) : skill.name,
+        ]),
+    );
+    const founderMainlinePreviewMutation = useMutation({
+        mutationFn: async () => requestFounderMainlineDraftPlanPreview(founderMainlineDraftPlanPayload),
+    });
+    const founderMainlineInterviewProgress = founderMainlineInterviewProgressMutation.data;
+    const founderMainlinePreviewSummary = founderMainlinePreviewMutation.data
+        ? buildFounderMainlineAgentCreateSummary(founderMainlinePreviewMutation.data)
+        : null;
+    const founderMainlinePreviewTemplates = (founderMainlinePreviewSummary?.recommendedTemplateKeys || [])
+        .map((templateKey: string) =>
+            duoduoTemplateLibrary?.items?.find((item: DuoduoTemplateLibraryItem) => item.template_key === templateKey),
+        )
+        .filter((item): item is DuoduoTemplateLibraryItem => Boolean(item));
+    const founderMainlinePreviewPacks = (founderMainlinePreviewSummary?.recommendedPackIds || [])
+        .map((packId: string) =>
+            duoduoSkillPackCatalog?.items?.find((pack: SkillPackCatalogItem) => pack.pack_id === packId),
+        )
+        .filter((pack): pack is SkillPackCatalogItem => Boolean(pack));
+    const founderMainlineAutofill = resolveFounderMainlineAgentCreateAutofill({
+        summary: founderMainlinePreviewSummary,
+        templates: templateCards,
+        templateLibraryItems: duoduoTemplateLibrary?.items || [],
+        skillPacks: duoduoSkillPackCatalog?.items || [],
+        skills: skillCards,
+        currentForm: {
+            template_id: form.template_id,
+            role_description: form.role_description,
+            personality: form.personality,
+            boundaries: form.boundaries,
+            skill_ids: form.skill_ids,
+        },
+    });
+    const founderMainlineAutofillTemplate = founderMainlineAutofill.resolvedTemplateKey
+        ? duoduoTemplateLibrary?.items?.find(
+            (item: DuoduoTemplateLibraryItem) => item.template_key === founderMainlineAutofill.resolvedTemplateKey,
+        )
+        : undefined;
+    const founderMainlineAutofillNewSkillCount = founderMainlineAutofill.nextForm.skill_ids.filter(
+        (skillId: string) => !form.skill_ids.includes(skillId),
+    ).length;
+    const founderMainlineAutofillHasChanges = (
+        founderMainlineAutofill.nextForm.template_id !== form.template_id
+        || founderMainlineAutofill.nextForm.role_description !== form.role_description
+        || founderMainlineAutofill.nextForm.personality !== form.personality
+        || founderMainlineAutofill.nextForm.boundaries !== form.boundaries
+        || founderMainlineAutofill.nextForm.skill_ids.length !== form.skill_ids.length
+        || founderMainlineAutofill.nextForm.skill_ids.some((skillId: string) => !form.skill_ids.includes(skillId))
+    );
+    const founderMainlineChangedTemplateLabels = (founderMainlinePreviewSummary?.changedTemplateKeys || []).map(
+        (templateKey: string) => {
+            const template = duoduoTemplateLibrary?.items?.find(
+                (item: DuoduoTemplateLibraryItem) => item.template_key === templateKey,
+            );
+            return isChineseUi
+                ? (template?.display_name_zh || template?.canonical_name || templateKey)
+                : (template?.canonical_name || templateKey);
+        },
+    );
+    const founderMainlineChangedPackLabels = (founderMainlinePreviewSummary?.changedPackIds || []).map(
+        (packId: string) => {
+            const pack = duoduoSkillPackCatalog?.items?.find((item: SkillPackCatalogItem) => item.pack_id === packId);
+            return isChineseUi
+                ? (pack?.display_name_zh || packId)
+                : (pack?.display_name_en || packId);
+        },
+    );
+    const founderMainlineAnsweredCount = founderMainlinePlanningPayload.answers.length;
+    const founderMainlineDisplayedState = (
+        founderMainlinePreviewMutation.isPending && founderMainlineCorrectionNotes.trim()
+            ? 'correction_in_progress'
+            : founderMainlinePreviewSummary?.planStatus
+                || founderMainlineInterviewProgress?.plan_status
+                || (selectedModel ? 'interview_in_progress' : 'step0_blocked')
+    );
+    const founderMainlineStateLabel = getFounderMainlineStateLabel(founderMainlineDisplayedState, isChineseUi);
+    const founderMainlineCanGeneratePreview = founderMainlineInterviewProgress?.plan_status === 'ready_for_plan';
+    const founderMainlineHasPreview = Boolean(founderMainlinePreviewSummary);
+    const founderMainlineCanShowCorrectionArea = founderMainlineCanGeneratePreview || founderMainlineHasPreview;
+    const founderMainlineCanApplyCorrection = Boolean(
+        founderMainlineHasPreview
+        && founderMainlineCorrectionNotes.trim()
+        && !founderMainlinePreviewMutation.isPending,
+    );
+    const founderMainlineCanApplyRecommendation = Boolean(
+        founderMainlineHasPreview
+        && founderMainlineAutofillHasChanges
+        && !founderMainlinePreviewMutation.isPending,
+    );
+    const founderMainlineCreateGuard = resolveFounderMainlineAgentCreateGuard({
+        summary: founderMainlinePreviewSummary,
+        recommendationApplied: founderMainlineRecommendationApplied,
+        isChineseUi,
+    });
+    const founderMainlineNextQuestionsByGroup = Object.fromEntries(
+        (founderMainlineInterviewProgress?.next_questions || []).map((question) => [question.group_id, question]),
+    );
+    const founderMainlineMissingGroupSet = new Set(founderMainlineInterviewProgress?.missing_groups || []);
+    const founderMainlineProgressError = founderMainlineInterviewProgressMutation.error instanceof Error
+        ? founderMainlineInterviewProgressMutation.error.message
+        : '';
+    const founderMainlinePreviewError = founderMainlinePreviewMutation.error instanceof Error
+        ? founderMainlinePreviewMutation.error.message
+        : '';
     const activeSteps = agentType === 'openclaw' ? OPENCLAW_STEPS : STEPS;
+
+    useEffect(() => {
+        founderMainlineInterviewProgressMutation.reset();
+        founderMainlinePreviewMutation.reset();
+        setFounderMainlineRecommendationApplied(false);
+    }, [
+        form.role_description,
+        form.primary_model_id,
+        i18n.language,
+        duoduoTemplateLibrary?.scenario?.scenario_id,
+        founderMainlineAnswers,
+        founderMainlineUserConfirmed,
+    ]);
+
+    useEffect(() => {
+        setFounderMainlineRecommendationApplied(false);
+    }, [founderMainlinePreviewMutation.data]);
 
     // If OpenClaw agent just created, show success page with API key
     if (createdApiKey && createMutation.data) {
@@ -553,19 +761,21 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                         {templates.length > 0 && (
                             <div className="form-group">
                                 <label className="form-label">{t('wizard.step1.selectTemplate')}</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
                                     <div
                                         onClick={() => setForm({ ...form, template_id: '' })}
                                         style={{
-                                            padding: '12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center',
+                                            padding: '12px', borderRadius: '8px', cursor: 'pointer',
                                             border: `1px solid ${!form.template_id ? 'var(--accent-primary)' : 'var(--border-default)'}`,
                                             background: !form.template_id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                                         }}
                                     >
-                                        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>{t('wizard.step1.custom')}</div>
-                                        <div style={{ fontSize: '12px', marginTop: '4px' }}>{t('wizard.step1.custom')}</div>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>{t('wizard.step1.custom')}</div>
+                                        <div style={{ fontSize: '12px', marginTop: '6px', color: 'var(--text-tertiary)' }}>
+                                            {isChineseUi ? '从空白模板开始，自行定义角色与技能。' : 'Start from a blank template and configure everything yourself.'}
+                                        </div>
                                     </div>
-                                    {templates.map((tmpl: any) => (
+                                    {templateCards.map((tmpl: any) => (
                                         <div
                                             key={tmpl.id}
                                             onClick={() => {
@@ -580,16 +790,128 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                                 });
                                             }}
                                             style={{
-                                                padding: '12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center',
+                                                padding: '12px', borderRadius: '8px', cursor: 'pointer',
                                                 border: `1px solid ${form.template_id === tmpl.id ? 'var(--accent-primary)' : 'var(--border-default)'}`,
                                                 background: form.template_id === tmpl.id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                                             }}
                                         >
-                                            <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>{tmpl.icon || tmpl.name?.[0] || '·'}</div>
-                                            <div style={{ fontSize: '12px', marginTop: '4px' }}>{String(t(`wizard.templates.${tmpl.name}`, tmpl.name))}</div>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                                    {tmpl.icon || tmpl.name?.[0] || '·'}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                    {tmpl.recommended_for_first_scenario && (
+                                                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 600 }}>
+                                                            {isChineseUi ? '首场景推荐' : 'First Scenario'}
+                                                        </span>
+                                                    )}
+                                                    {!tmpl.recommended_for_first_scenario && tmpl.duoduo_recommended && (
+                                                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                            {isChineseUi ? '多舵推荐' : 'Recommended'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: '13px', marginTop: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                {isChineseUi
+                                                    ? (tmpl.display_name_zh || String(t(`wizard.templates.${tmpl.name}`, tmpl.name)))
+                                                    : String(t(`wizard.templates.${tmpl.name}`, tmpl.name))}
+                                            </div>
+                                            <div style={{ fontSize: '11px', marginTop: '6px', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+                                                {isChineseUi
+                                                    ? (tmpl.library_summary_zh || tmpl.description)
+                                                    : (tmpl.description || tmpl.library_summary_zh)}
+                                            </div>
+                                            {!!tmpl.default_skills?.length && (
+                                                <div style={{ fontSize: '11px', marginTop: '8px', color: 'var(--text-secondary)' }}>
+                                                    {isChineseUi
+                                                        ? `${tmpl.default_skills.length} 个预设技能`
+                                                        : `${tmpl.default_skills.length} preset skills`}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
+                                {selectedTemplateLibraryItem && (
+                                    <div style={{
+                                        marginTop: '12px',
+                                        padding: '14px',
+                                        background: 'var(--bg-elevated)',
+                                        border: '1px solid var(--border-default)',
+                                        borderRadius: '10px',
+                                    }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            {isChineseUi ? '模板能力说明' : 'Template capability summary'}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
+                                            {isChineseUi
+                                                ? (selectedTemplateLibraryItem.primary_goal || selectedTemplate.library_summary_zh || selectedTemplate.description)
+                                                : (selectedTemplate.description || selectedTemplateLibraryItem.primary_goal)}
+                                        </div>
+                                        {selectedTemplateRecommendedPacks.length > 0 && (
+                                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                    {isChineseUi
+                                                        ? '这个模板会优先按下列能力包组织自动技能，帮助大陆团队先用中文流程跑通业务。'
+                                                        : 'This template organizes its auto-included skills around the following capability packs.'}
+                                                </div>
+                                                {selectedTemplateRecommendedPacks.map((pack: SkillPackCatalogItem) => (
+                                                    <div
+                                                        key={pack.pack_id}
+                                                        style={{
+                                                            padding: '10px 12px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid var(--border-default)',
+                                                            background: 'var(--bg-primary)',
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                                {isChineseUi ? pack.display_name_zh : pack.display_name_en}
+                                                            </div>
+                                                            <span style={{
+                                                                fontSize: '10px',
+                                                                padding: '2px 8px',
+                                                                borderRadius: '999px',
+                                                                background: 'var(--accent-subtle)',
+                                                                color: 'var(--text-secondary)',
+                                                            }}>
+                                                                {isChineseUi ? '推荐能力包' : 'Recommended pack'}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
+                                                            {pack.business_goal}
+                                                        </div>
+                                                        {!!pack.included_skills?.length && (
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                                                {pack.included_skills.map((slug: string) => (
+                                                                    <span
+                                                                        key={`${pack.pack_id}-${slug}`}
+                                                                        style={{
+                                                                            fontSize: '10px',
+                                                                            padding: '2px 7px',
+                                                                            borderRadius: '999px',
+                                                                            background: 'var(--bg-secondary)',
+                                                                            color: 'var(--text-secondary)',
+                                                                        }}
+                                                                    >
+                                                                        {skillLabelByFolderName[slug] || slug}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {selectedTemplateLibraryItem.default_boundaries?.length > 0 && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: 1.6, marginTop: '10px' }}>
+                                                {isChineseUi ? '默认边界：' : 'Default boundary: '}
+                                                {selectedTemplateLibraryItem.default_boundaries[0]}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* JSON Import */}
                                 <div style={{ marginTop: '8px' }}>
@@ -633,6 +955,540 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                 onChange={(e) => { setForm({ ...form, role_description: e.target.value }); clearFieldError('role_description'); }}
                                 placeholder={t('wizard.roleHint')} />
                             {fieldErrors.role_description && <div style={{ color: 'var(--error)', fontSize: '12px', marginTop: '4px' }}>{fieldErrors.role_description}</div>}
+                        </div>
+                        <div style={{
+                            marginTop: '12px',
+                            padding: '14px',
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border-default)',
+                            borderRadius: '10px',
+                        }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            {isChineseUi ? '创业导师草案预览（实验）' : 'Founder mainline draft preview (experimental)'}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.6 }}>
+                                            {isChineseUi
+                                                ? '先补结构化访谈，再生成团队草案。这样推荐的模板、能力包和团队编排会更接近真实业务。'
+                                                : 'Complete the structured interview first, then generate the team draft. This keeps templates, packs, and team layout closer to the real business.'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        padding: '4px 8px',
+                                        borderRadius: '999px',
+                                        background: 'var(--bg-primary)',
+                                        border: '1px solid var(--border-default)',
+                                        color: 'var(--text-secondary)',
+                                    }}>
+                                        {isChineseUi
+                                            ? `当前状态：${founderMainlineStateLabel}`
+                                            : `State: ${founderMainlineStateLabel}`}
+                                    </span>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        padding: '4px 8px',
+                                        borderRadius: '999px',
+                                        background: 'var(--bg-primary)',
+                                        border: '1px solid var(--border-default)',
+                                        color: 'var(--text-secondary)',
+                                    }}>
+                                        {isChineseUi
+                                            ? `已回答 ${founderMainlineAnsweredCount}/${FOUNDER_MAINLINE_INTERVIEW_TOTAL_GROUPS}`
+                                            : `Answered ${founderMainlineAnsweredCount}/${FOUNDER_MAINLINE_INTERVIEW_TOTAL_GROUPS}`}
+                                    </span>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        padding: '4px 8px',
+                                        borderRadius: '999px',
+                                        background: 'var(--bg-primary)',
+                                        border: '1px solid var(--border-default)',
+                                        color: selectedModel ? 'var(--text-secondary)' : 'var(--warning)',
+                                    }}>
+                                        {selectedModel
+                                            ? (isChineseUi ? `模型已选择：${selectedModel.label}` : `Model selected: ${selectedModel.label}`)
+                                            : (isChineseUi ? '未选择主模型，当前会停留在 Step 0 blocked' : 'No primary model selected yet, so this stays at step0_blocked')}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+                                    {FOUNDER_MAINLINE_INTERVIEW_FIELDS.map((field) => {
+                                        const serverQuestion = founderMainlineNextQuestionsByGroup[field.group_id];
+                                        const isMissing = founderMainlineMissingGroupSet.has(field.group_id);
+                                        const value = founderMainlineAnswers[field.group_id] || '';
+                                        return (
+                                            <label
+                                                key={`founder-mainline-answer-${field.group_id}`}
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '6px',
+                                                    padding: '12px',
+                                                    borderRadius: '10px',
+                                                    border: `1px solid ${isMissing ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                                    background: isMissing ? 'var(--accent-subtle)' : 'var(--bg-primary)',
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                        {isChineseUi ? field.label_zh : field.label_en}
+                                                    </span>
+                                                    {isMissing && (
+                                                        <span style={{
+                                                            fontSize: '10px',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '999px',
+                                                            background: 'var(--bg-secondary)',
+                                                            color: 'var(--text-secondary)',
+                                                        }}>
+                                                            {isChineseUi ? '优先补充' : 'Priority'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+                                                    {isChineseUi
+                                                        ? (serverQuestion?.question_zh || field.question_zh)
+                                                        : field.question_en}
+                                                </div>
+                                                <textarea
+                                                    className="form-textarea"
+                                                    rows={3}
+                                                    value={value}
+                                                    onChange={(e) => {
+                                                        const answerValue = e.target.value;
+                                                        setFounderMainlineAnswers((prev) => ({
+                                                            ...prev,
+                                                            [field.group_id]: answerValue,
+                                                        }));
+                                                    }}
+                                                    placeholder={isChineseUi ? field.placeholder_zh : field.placeholder_en}
+                                                />
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                <div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            disabled={!form.role_description.trim() || founderMainlineInterviewProgressMutation.isPending}
+                                            onClick={() => founderMainlineInterviewProgressMutation.mutate()}
+                                        >
+                                            {founderMainlineInterviewProgressMutation.isPending
+                                                ? (isChineseUi ? '分析中…' : 'Checking…')
+                                                : (isChineseUi ? '检查访谈进度' : 'Check interview progress')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            disabled={!form.role_description.trim() || !founderMainlineCanGeneratePreview || founderMainlinePreviewMutation.isPending}
+                                            onClick={() => founderMainlinePreviewMutation.mutate()}
+                                        >
+                                            {founderMainlinePreviewMutation.isPending
+                                                ? (isChineseUi ? '生成中…' : 'Generating…')
+                                                : (isChineseUi ? '生成草案预览' : 'Generate draft preview')}
+                                        </button>
+                                        {founderMainlineCanShowCorrectionArea && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                disabled={!founderMainlineCanApplyCorrection}
+                                                onClick={() => founderMainlinePreviewMutation.mutate()}
+                                            >
+                                                {founderMainlinePreviewMutation.isPending
+                                                    ? (isChineseUi ? '应用中…' : 'Applying…')
+                                                    : (isChineseUi ? '应用中文纠偏' : 'Apply correction')}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {!founderMainlineCanGeneratePreview && (
+                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '8px', lineHeight: 1.6 }}>
+                                            {founderMainlineInterviewProgress
+                                                ? (isChineseUi
+                                                    ? '先按提示补齐关键信息，状态进入“可以生成草案”后再预览。'
+                                                    : 'Fill the remaining required answers first. Preview becomes available once the state reaches ready_for_plan.')
+                                                : (isChineseUi
+                                                    ? '先检查一次访谈进度，系统会告诉你当前缺哪些关键信息。'
+                                                    : 'Check the interview progress first. The system will tell you which key inputs are still missing.')}
+                                        </div>
+                                    )}
+                                    {founderMainlineCanShowCorrectionArea && (
+                                        <div style={{ marginTop: '12px' }}>
+                                            <label
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: '8px',
+                                                    marginBottom: '12px',
+                                                    fontSize: '11px',
+                                                    color: 'var(--text-secondary)',
+                                                    lineHeight: 1.6,
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={founderMainlineUserConfirmed}
+                                                    onChange={(e) => setFounderMainlineUserConfirmed(e.target.checked)}
+                                                    style={{ marginTop: '2px' }}
+                                                />
+                                                <span>
+                                                    {isChineseUi
+                                                        ? '我已审阅当前团队草案，可同步执行部署准备检查。勾选后重新生成草案或应用纠偏时，系统会一起判断是否达到部署准备门槛。'
+                                                        : 'I have reviewed the current draft. When checked, the next preview or correction run will also evaluate deploy-prep readiness.'}
+                                                </span>
+                                            </label>
+                                            <label
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '6px',
+                                                    fontSize: '11px',
+                                                    color: 'var(--text-secondary)',
+                                                    lineHeight: 1.6,
+                                                }}
+                                            >
+                                                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                                                    {isChineseUi ? '中文纠偏说明' : 'Correction notes'}
+                                                </span>
+                                                <span>
+                                                    {isChineseUi
+                                                        ? '如果你觉得上一版团队草案有偏差，可直接用中文说明“哪里不对、希望怎么改”，系统会基于当前草案做最小修订。'
+                                                        : 'If the last draft feels off, describe what should change. The next preview will revise the current draft with a minimal correction.'}
+                                                </span>
+                                                <textarea
+                                                    className="form-textarea"
+                                                    rows={3}
+                                                    value={founderMainlineCorrectionNotes}
+                                                    onChange={(e) => setFounderMainlineCorrectionNotes(e.target.value)}
+                                                    placeholder={
+                                                        isChineseUi
+                                                            ? '例：不要单独设用户成功团队，先把双语内容增长和海外分发排在更前面。'
+                                                            : 'Example: Do not split customer success into a separate team. Prioritize bilingual content growth and overseas distribution first.'
+                                                    }
+                                                />
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {!!founderMainlineProgressError && (
+                                <div style={{ fontSize: '11px', color: 'var(--error)', lineHeight: 1.6 }}>
+                                    {founderMainlineProgressError}
+                                </div>
+                            )}
+                            {founderMainlineInterviewProgress && (
+                                <div style={{
+                                    padding: '12px',
+                                    background: 'var(--bg-primary)',
+                                    border: '1px solid var(--border-default)',
+                                    borderRadius: '8px',
+                                    fontSize: '11px',
+                                    color: 'var(--text-secondary)',
+                                    lineHeight: 1.7,
+                                }}>
+                                    <div>
+                                        {isChineseUi
+                                            ? `服务端状态：${founderMainlineStateLabel}`
+                                            : `Server state: ${founderMainlineStateLabel}`}
+                                    </div>
+                                    {!!founderMainlineInterviewProgress.next_questions.length && (
+                                        <div style={{ marginTop: '6px' }}>
+                                            {isChineseUi ? '建议下一步：' : 'Next recommended questions: '}
+                                            {founderMainlineInterviewProgress.next_questions.map((question) => question.question_zh).join('；')}
+                                        </div>
+                                    )}
+                                    {!!founderMainlineInterviewProgress.missing_groups.length && (
+                                        <div style={{ marginTop: '6px' }}>
+                                            {isChineseUi
+                                                ? `仍缺 ${founderMainlineInterviewProgress.missing_groups.length} 个问题组`
+                                                : `${founderMainlineInterviewProgress.missing_groups.length} question groups still missing`}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {!!founderMainlinePreviewError && (
+                                <div style={{ fontSize: '11px', color: 'var(--error)', marginTop: '10px', lineHeight: 1.6 }}>
+                                    {founderMainlinePreviewError}
+                                </div>
+                            )}
+                            {founderMainlinePreviewSummary && (
+                                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                        {founderMainlinePreviewSummary.blueprintSummaryZh}
+                                    </div>
+                                    {(founderMainlinePreviewSummary.previousPlanSummaryZh
+                                        || founderMainlinePreviewSummary.changeSummaryZh.length > 0
+                                        || founderMainlineChangedTemplateLabels.length > 0
+                                        || founderMainlineChangedPackLabels.length > 0) && (
+                                        <div style={{
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--border-default)',
+                                            background: 'var(--bg-primary)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '10px',
+                                        }}>
+                                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                {isChineseUi ? '纠偏回显' : 'Correction review'}
+                                            </div>
+                                            {!!founderMainlinePreviewSummary.previousPlanSummaryZh && (
+                                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                    <span style={{ color: 'var(--text-tertiary)' }}>
+                                                        {isChineseUi ? '上一版摘要：' : 'Previous summary: '}
+                                                    </span>
+                                                    {founderMainlinePreviewSummary.previousPlanSummaryZh}
+                                                </div>
+                                            )}
+                                            {founderMainlinePreviewSummary.changeSummaryZh.length > 0 && (
+                                                <div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                        {isChineseUi ? '本次调整' : 'Applied changes'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        {founderMainlinePreviewSummary.changeSummaryZh.map((change, index) => (
+                                                            <div
+                                                                key={`founder-preview-change-${index}`}
+                                                                style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+                                                            >
+                                                                {isChineseUi ? '• ' : '- '}
+                                                                {change}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {founderMainlineChangedTemplateLabels.length > 0 && (
+                                                <div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                        {isChineseUi ? '受影响模板' : 'Changed templates'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {founderMainlineChangedTemplateLabels.map((label: string) => (
+                                                            <span
+                                                                key={`founder-preview-changed-template-${label}`}
+                                                                style={{
+                                                                    fontSize: '10px',
+                                                                    padding: '3px 8px',
+                                                                    borderRadius: '999px',
+                                                                    background: 'var(--bg-secondary)',
+                                                                    color: 'var(--text-secondary)',
+                                                                }}
+                                                            >
+                                                                {label}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {founderMainlineChangedPackLabels.length > 0 && (
+                                                <div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                        {isChineseUi ? '受影响能力包' : 'Changed packs'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {founderMainlineChangedPackLabels.map((label: string) => (
+                                                            <span
+                                                                key={`founder-preview-changed-pack-${label}`}
+                                                                style={{
+                                                                    fontSize: '10px',
+                                                                    padding: '3px 8px',
+                                                                    borderRadius: '999px',
+                                                                    background: 'var(--accent-subtle)',
+                                                                    color: 'var(--text-secondary)',
+                                                                }}
+                                                            >
+                                                                {label}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                                        <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-primary)' }}>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                {isChineseUi ? '主控角色' : 'Founder role'}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '4px' }}>
+                                                {founderMainlinePreviewSummary.founderDisplayNameZh}
+                                            </div>
+                                        </div>
+                                        <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-primary)' }}>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                {isChineseUi ? '团队草案' : 'Draft teams'}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '4px' }}>
+                                                {founderMainlinePreviewSummary.teamNamesZh.join(' / ')}
+                                            </div>
+                                        </div>
+                                        <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-primary)' }}>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                                                {isChineseUi ? '部署准备' : 'Deploy prep'}
+                                            </div>
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginTop: '4px' }}>
+                                                {founderMainlinePreviewSummary.canEnterDeployPrep
+                                                    ? (isChineseUi ? '可进入' : 'Ready')
+                                                    : (isChineseUi ? '暂不可进入' : 'Not ready yet')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {(!founderMainlinePreviewSummary.canEnterDeployPrep
+                                        && (founderMainlinePreviewSummary.deployPrepBlockerReasonZh
+                                            || founderMainlinePreviewSummary.deployPrepMissingItems.length > 0)) && (
+                                        <div style={{
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--border-default)',
+                                            background: 'var(--bg-primary)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '8px',
+                                        }}>
+                                            {!!founderMainlinePreviewSummary.deployPrepBlockerReasonZh && (
+                                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                    <span style={{ color: 'var(--text-tertiary)' }}>
+                                                        {isChineseUi ? '当前阻塞：' : 'Current blocker: '}
+                                                    </span>
+                                                    {founderMainlinePreviewSummary.deployPrepBlockerReasonZh}
+                                                </div>
+                                            )}
+                                            {founderMainlinePreviewSummary.deployPrepMissingItems.length > 0 && (
+                                                <div>
+                                                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                        {isChineseUi ? '进入部署准备前还缺' : 'Still missing before deploy prep'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        {founderMainlinePreviewSummary.deployPrepMissingItems.map((item, index) => (
+                                                            <div
+                                                                key={`founder-preview-deploy-missing-${index}`}
+                                                                style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+                                                            >
+                                                                {isChineseUi ? '• ' : '- '}
+                                                                {item}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {founderMainlinePreviewTemplates.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                {isChineseUi ? '推荐模板' : 'Recommended templates'}
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {founderMainlinePreviewTemplates.map((item: DuoduoTemplateLibraryItem) => (
+                                                    <span
+                                                        key={`founder-preview-template-${item.template_key}`}
+                                                        style={{
+                                                            fontSize: '10px',
+                                                            padding: '3px 8px',
+                                                            borderRadius: '999px',
+                                                            background: 'var(--bg-secondary)',
+                                                            color: 'var(--text-secondary)',
+                                                        }}
+                                                    >
+                                                        {isChineseUi ? (item.display_name_zh || item.canonical_name) : item.canonical_name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {founderMainlinePreviewPacks.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                                                {isChineseUi ? '推荐能力包' : 'Recommended packs'}
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {founderMainlinePreviewPacks.map((pack: SkillPackCatalogItem) => (
+                                                    <span
+                                                        key={`founder-preview-pack-${pack.pack_id}`}
+                                                        style={{
+                                                            fontSize: '10px',
+                                                            padding: '3px 8px',
+                                                            borderRadius: '999px',
+                                                            background: 'var(--accent-subtle)',
+                                                            color: 'var(--text-secondary)',
+                                                        }}
+                                                    >
+                                                        {isChineseUi ? pack.display_name_zh : pack.display_name_en}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {founderMainlinePreviewSummary.openQuestions.length > 0 && (
+                                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+                                            {isChineseUi ? '待确认：' : 'Open questions: '}
+                                            {founderMainlinePreviewSummary.openQuestions.join('；')}
+                                        </div>
+                                    )}
+                                    {(founderMainlineAutofill.resolvedTemplateId
+                                        || founderMainlineAutofill.resolvedSkillIds.length > 0
+                                        || founderMainlineAutofill.unresolvedTemplateKeys.length > 0
+                                        || founderMainlineAutofill.unresolvedPackIds.length > 0) && (
+                                        <div style={{
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--border-default)',
+                                            background: 'var(--bg-primary)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '8px',
+                                        }}>
+                                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                {isChineseUi ? '创建表单回填' : 'Create-form autofill'}
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                {founderMainlineAutofillHasChanges
+                                                    ? (isChineseUi
+                                                        ? `可将当前 founder 推荐写回创建表单${founderMainlineAutofillTemplate ? `：模板 ${founderMainlineAutofillTemplate.display_name_zh || founderMainlineAutofillTemplate.canonical_name}` : ''}${founderMainlineAutofillNewSkillCount > 0 ? `，新增 ${founderMainlineAutofillNewSkillCount} 个技能` : ''}。`
+                                                        : `You can apply the current founder recommendation back into this form${founderMainlineAutofillTemplate ? `: template ${founderMainlineAutofillTemplate.canonical_name}` : ''}${founderMainlineAutofillNewSkillCount > 0 ? `, plus ${founderMainlineAutofillNewSkillCount} additional skills` : ''}.`)
+                                                    : (isChineseUi
+                                                        ? '当前 founder 推荐已经同步到这个创建表单。'
+                                                        : 'The current founder recommendation is already reflected in this create form.')}
+                                            </div>
+                                            {(founderMainlineAutofill.unresolvedTemplateKeys.length > 0
+                                                || founderMainlineAutofill.unresolvedPackIds.length > 0) && (
+                                                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+                                                    {isChineseUi
+                                                        ? `仍有 ${founderMainlineAutofill.unresolvedTemplateKeys.length} 个模板推荐、${founderMainlineAutofill.unresolvedPackIds.length} 个能力包推荐暂时无法映射到当前目录。`
+                                                        : `${founderMainlineAutofill.unresolvedTemplateKeys.length} template recommendations and ${founderMainlineAutofill.unresolvedPackIds.length} pack recommendations cannot be mapped locally yet.`}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary"
+                                                    disabled={!founderMainlineCanApplyRecommendation}
+                                                    onClick={() => {
+                                                        setError('');
+                                                        setFounderMainlineRecommendationApplied(true);
+                                                        setForm((prev) => ({
+                                                            ...prev,
+                                                            ...founderMainlineAutofill.nextForm,
+                                                        }));
+                                                    }}
+                                                >
+                                                    {isChineseUi ? '应用 founder 推荐到表单' : 'Apply founder recommendation'}
+                                                </button>
+                                            </div>
+                                            {founderMainlineRecommendationApplied && founderMainlineCreateGuard.isBlocked && (
+                                                <div style={{ fontSize: '10px', color: 'var(--warning, #b7791f)', lineHeight: 1.6 }}>
+                                                    {founderMainlineCreateGuard.message}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Model Selection */}
@@ -710,23 +1566,80 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
                             {t('wizard.step3.description')}
                         </p>
+                        {selectedTemplate && templateIncludedSkills.length > 0 && (
+                            <div style={{
+                                marginBottom: '14px',
+                                padding: '12px',
+                                background: 'var(--bg-elevated)',
+                                border: '1px solid var(--border-default)',
+                                borderRadius: '10px',
+                            }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '当前模板会自动装配以下技能' : 'The selected template will auto-include these skills'}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                    {isChineseUi
+                                        ? '这些技能无需手动勾选，创建后会随模板一起写入 Agent 工作区。'
+                                        : 'These skills do not need manual selection and will be written into the agent workspace automatically.'}
+                                </div>
+                                {selectedTemplateRecommendedPacks.length > 0 && (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: 1.6 }}>
+                                        {isChineseUi ? '这些自动技能主要来自：' : 'These auto-included skills mainly come from: '}
+                                        {selectedTemplateRecommendedPacks.map((pack: SkillPackCatalogItem) => (
+                                            <span
+                                                key={`source-pack-${pack.pack_id}`}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    marginRight: '6px',
+                                                    marginTop: '4px',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '999px',
+                                                    background: 'var(--bg-secondary)',
+                                                    color: 'var(--text-secondary)',
+                                                }}
+                                            >
+                                                {isChineseUi ? pack.display_name_zh : pack.display_name_en}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                    {templateIncludedSkills.map((skill: SkillLibraryItem) => (
+                                        <span
+                                            key={skill.id}
+                                            style={{
+                                                fontSize: '11px',
+                                                padding: '4px 8px',
+                                                borderRadius: '999px',
+                                                background: 'var(--accent-subtle)',
+                                                color: 'var(--text-primary)',
+                                                border: '1px solid var(--border-default)',
+                                            }}
+                                        >
+                                            {isChineseUi ? (skill.display_name_zh || skill.name) : skill.name}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {globalSkills.map((skill: any) => {
+                            {skillCards.map((skill: SkillLibraryItem) => {
                                 const isDefault = skill.is_default;
-                                const isChecked = form.skill_ids.includes(skill.id);
+                                const isTemplateIncluded = templateIncludedSkillIds.has(skill.id);
+                                const isChecked = isDefault || isTemplateIncluded || form.skill_ids.includes(skill.id);
                                 return (
                                     <label key={skill.id} style={{
                                         display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
                                         background: isChecked ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
                                         border: `1px solid ${isChecked ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-                                        borderRadius: '8px', cursor: isDefault ? 'default' : 'pointer',
-                                        opacity: isDefault ? 0.85 : 1,
+                                        borderRadius: '8px', cursor: (isDefault || isTemplateIncluded) ? 'default' : 'pointer',
+                                        opacity: (isDefault || isTemplateIncluded) ? 0.85 : 1,
                                     }}>
                                         <input type="checkbox"
                                             checked={isChecked}
-                                            disabled={isDefault}
+                                            disabled={isDefault || isTemplateIncluded}
                                             onChange={(e) => {
-                                                if (isDefault) return;
+                                                if (isDefault || isTemplateIncluded) return;
                                                 if (e.target.checked) {
                                                     setForm({ ...form, skill_ids: [...form.skill_ids, skill.id] });
                                                 } else {
@@ -736,17 +1649,42 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                         />
                                         <div style={{ fontSize: '18px' }}>{skill.icon}</div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{ fontWeight: 500, fontSize: '13px' }}>{skill.name}</span>
-                                                {isDefault && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>Required</span>}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                <span style={{ fontWeight: 500, fontSize: '13px' }}>
+                                                    {isChineseUi ? (skill.display_name_zh || skill.name) : skill.name}
+                                                </span>
+                                                {isDefault && (
+                                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>
+                                                        {isChineseUi ? '必带' : 'Required'}
+                                                    </span>
+                                                )}
+                                                {!isDefault && isTemplateIncluded && (
+                                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 500 }}>
+                                                        {isChineseUi ? '模板预置' : 'Template'}
+                                                    </span>
+                                                )}
+                                                {!isDefault && skill.recommended_for_first_scenario && (
+                                                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                                        {isChineseUi ? '首场景推荐' : 'Recommended'}
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{skill.description}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                                {isChineseUi
+                                                    ? (skill.library_summary_zh || skill.description)
+                                                    : (skill.description || skill.library_summary_zh)}
+                                            </div>
+                                            {skill.pack_hint_zh && (
+                                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                                    {isChineseUi ? skill.pack_hint_zh : `Pack: ${skill.pack_id || skill.pack_key || 'general-support'}`}
+                                                </div>
+                                            )}
                                         </div>
                                     </label>);
                             })}
                             {globalSkills.length === 0 && (
                                 <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                                    No skills available. Add skills in Company Settings.
+                                    {isChineseUi ? '当前没有可用技能，请先在企业设置中配置。' : 'No skills available. Add skills in Company Settings.'}
                                 </div>
                             )}
                         </div>

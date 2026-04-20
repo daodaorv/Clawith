@@ -14,9 +14,13 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 from sqlalchemy import select
 
+from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
 from app.database import async_session
 from app.models.task import Task, TaskLog
 from app.models.agent import Agent
+
+settings = get_settings()
 
 # Schedule JSON format:
 # {"freq": "daily"|"weekly", "interval": N, "time": "HH:MM", "weekdays": [0-6]}
@@ -137,7 +141,7 @@ async def _get_agent_reply(target_agent, message: str, db) -> str | None:
 
     client = create_llm_client(
         provider=model.provider,
-        api_key=model.api_key_encrypted,
+        api_key=decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY),
         model=model.model,
         base_url=base_url,
         timeout=float(getattr(model, 'request_timeout', None) or 60.0),
@@ -185,7 +189,7 @@ async def _send_supervision_reminder(task: Task, agent_name: str):
         reminder_msg += f"创建于：{days_since} 天前\n"
         if task.due_date:
             reminder_msg += f"截止日期：{task.due_date.strftime('%Y-%m-%d')}\n"
-        reminder_msg += f"\n请及时处理，谢谢！"
+        reminder_msg += "\n请及时处理，谢谢！"
 
         async with async_session() as db:
             sent = False

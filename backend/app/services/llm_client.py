@@ -1866,6 +1866,14 @@ def get_provider_manifest() -> list[dict[str, Any]]:
             "default_max_tokens": spec.default_max_tokens,
             "model_max_tokens": spec.model_max_tokens,
             "aliases": [k for k, v in PROVIDER_ALIASES.items() if v == spec.provider],
+            "base_url_required": spec.default_base_url is None,
+            "base_url_editable": True,
+            "base_url_examples": [spec.default_base_url] if spec.default_base_url else [],
+            "auth_scheme": "bearer",
+            "probe_strategy": spec.protocol,
+            "capabilities": {
+                "supports_tool_choice": spec.supports_tool_choice,
+            },
         })
     return out
 

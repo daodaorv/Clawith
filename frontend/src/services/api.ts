@@ -340,7 +340,25 @@ export const enterpriseApi = {
         const tid = localStorage.getItem('current_tenant_id');
         return request<any[]>(`/enterprise/llm-models${tid ? `?tenant_id=${tid}` : ''}`);
     },
-    templates: () => request<any[]>('/agents/templates'),
+    llmProbe: (data: {
+        provider: string;
+        model: string;
+        api_key?: string;
+        base_url?: string;
+        model_id?: string;
+    }) => request<LLMProbeResult>('/enterprise/llm-probe', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    }),
+    templates: () => request<AgentTemplateLibraryItem[]>('/agents/templates'),
+    duoduoTemplateLibrary: (scenario?: string) =>
+        request<DuoduoTemplateLibraryResponse>(
+            `/enterprise/duoduo/template-library${scenario ? `?scenario=${encodeURIComponent(scenario)}` : ''}`,
+        ),
+    duoduoSkillPacks: (scenario?: string) =>
+        request<SkillPackCatalogResponse>(
+            `/enterprise/duoduo/skill-packs${scenario ? `?scenario=${encodeURIComponent(scenario)}` : ''}`,
+        ),
 
     // Enterprise Knowledge Base
     kbFiles: (path: string = '') =>
@@ -363,6 +381,174 @@ export const enterpriseApi = {
             method: 'DELETE',
         }),
 };
+
+export interface LLMProbeResult {
+    success: boolean;
+    resolved_provider: string | null;
+    protocol?: string | null;
+    recommended_model?: string | null;
+    normalized_base_url?: string | null;
+    base_url_source?: string;
+    supports_completion?: boolean;
+    supports_stream?: boolean;
+    supports_tool_call?: boolean;
+    supports_reasoning_signal?: boolean;
+    gateway_profile?: string;
+    gateway_hint?: string;
+    error_code?: string;
+    error_message?: string;
+    latency_ms?: number;
+    reply_preview?: string;
+    autofill: {
+        applied_fields: string[];
+    };
+}
+
+export interface AgentTemplateLibraryItem {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    category: string;
+    is_builtin: boolean;
+    soul_template: string;
+    default_skills: string[];
+    default_autonomy_policy: Record<string, string>;
+    display_name_zh?: string;
+    library_summary_zh?: string;
+    library_tags_zh?: string[];
+    duoduo_recommended?: boolean;
+    recommended_for_first_scenario?: boolean;
+    first_scenario_key?: string;
+    first_scenario_label_zh?: string;
+    sort_order?: number;
+    library_stage?: string;
+    source_type?: string;
+    role_group_zh?: string;
+}
+
+export interface DuoduoTemplateLibrarySource {
+    source_id: string;
+    project_name: string;
+    source_url: string;
+    license: string;
+    project_type: string;
+    maturity_level: string;
+    primary_value: string;
+    industry_fit: string[];
+    status: string;
+    notes: string;
+}
+
+export interface DuoduoCoordinationPattern {
+    pattern_id: string;
+    name: string;
+    display_name_zh: string;
+    topology_type: string;
+    applicable_scenarios: string[];
+    roles_required: string[];
+    handoff_rules: string[];
+    escalation_rules: string[];
+    human_approval_points: string[];
+    failure_risks: string[];
+    source_ids: string[];
+    validation_status: string;
+}
+
+export interface DuoduoSkillPackReference {
+    skill_pack_id: string;
+    display_name_zh: string;
+    goal: string;
+    required_tools: string[];
+    integration_dependencies: string[];
+    risk_level: string;
+    recommended_for_roles: string[];
+    source_type: string;
+    version_range: string;
+}
+
+export interface DuoduoTemplateLibraryItem {
+    template_key: string;
+    canonical_name: string;
+    display_name_zh: string;
+    role_level: string;
+    role_type: string;
+    primary_goal: string;
+    applicable_scenarios: string[];
+    business_stage: string[];
+    recommended_model_family: string[];
+    default_autonomy_level: string;
+    default_boundaries: string[];
+    recommended_skill_packs: string[];
+    coordination_pattern_ids: string[];
+    source_ids: string[];
+    validation_status: string;
+}
+
+export interface DuoduoTemplateLibraryResponse {
+    version: string;
+    scenario: {
+        scenario_id: string;
+        display_name_zh: string;
+    };
+    count: number;
+    items: DuoduoTemplateLibraryItem[];
+    sources: DuoduoTemplateLibrarySource[];
+    coordination_patterns: DuoduoCoordinationPattern[];
+    skill_pack_refs: DuoduoSkillPackReference[];
+}
+
+export interface SkillLibraryItem {
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+    icon: string;
+    folder_name: string;
+    is_builtin: boolean;
+    is_default: boolean;
+    created_at?: string | null;
+    display_name_zh?: string;
+    library_summary_zh?: string;
+    library_tags_zh?: string[];
+    duoduo_recommended?: boolean;
+    recommended_for_first_scenario?: boolean;
+    first_scenario_key?: string;
+    first_scenario_label_zh?: string;
+    pack_id?: string;
+    pack_key?: string;
+    pack_hint_zh?: string;
+    sort_order?: number;
+    library_stage?: string;
+    source_type?: string;
+}
+
+export interface SkillPackCatalogItem {
+    pack_id: string;
+    version: string;
+    display_name_zh: string;
+    display_name_en: string;
+    business_goal: string;
+    applicable_scenarios: string[];
+    recommended_roles: string[];
+    included_skills: string[];
+    required_integrations: string[];
+    required_tools: string[];
+    default_prompts_or_policies: string[];
+    compatibility_notes: string;
+    risk_level: string;
+    acceptance_metrics: string[];
+    status: string;
+}
+
+export interface SkillPackCatalogResponse {
+    scenario: {
+        scenario_id: string;
+        display_name_zh: string;
+    };
+    count: number;
+    items: SkillPackCatalogItem[];
+}
 
 // ─── Activity Logs ────────────────────────────────────
 export const activityApi = {
@@ -408,7 +594,14 @@ export const scheduleApi = {
 
 // ─── Skills ───────────────────────────────────────────
 export const skillApi = {
-    list: () => request<any[]>('/skills/'),
+    list: () => request<SkillLibraryItem[]>('/skills/'),
+    packs: {
+        list: (scenario?: string) =>
+            request<SkillPackCatalogResponse>(
+                `/skills/packs${scenario ? `?scenario=${encodeURIComponent(scenario)}` : ''}`,
+            ),
+        get: (packId: string) => request<SkillPackCatalogItem>(`/skills/packs/${packId}`),
+    },
     get: (id: string) => request<any>(`/skills/${id}`),
     create: (data: any) =>
         request<any>('/skills/', { method: 'POST', body: JSON.stringify(data) }),
@@ -508,3 +701,45 @@ export const controlApi = {
         request<any>(`/agents/${agentId}/control/unlock`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
+export type {
+    FounderMainlineCompanyBlueprint,
+    FounderMainlineCoordinationRelationship,
+    FounderMainlineDeploymentReadiness,
+    FounderMainlineDraftPlan,
+    FounderMainlineDraftPlanRequest,
+    FounderMainlineFounderCopilot,
+    FounderMainlineRolePlan,
+    FounderMainlineSkillPackRecommendation,
+    FounderMainlineTeamPlan,
+    FounderMainlineTemplateRecommendation,
+    FounderMainlineTraceabilityItem,
+} from './founderMainlineDraftPlan';
+export {
+    FOUNDER_MAINLINE_DRAFT_PLAN_ENDPOINT,
+    requestFounderMainlineDraftPlanPreview,
+} from './founderMainlineDraftPlan';
+export type {
+    FounderMainlineInterviewAnswer,
+    FounderMainlineInterviewAnswerMap,
+    FounderMainlineInterviewField,
+    FounderMainlineInterviewGroupId,
+    FounderMainlineInterviewProgress,
+    FounderMainlineInterviewQuestion,
+    FounderMainlineModelReadyContext,
+    FounderMainlinePlanningPayload,
+    FounderMainlinePreviewModelSelection,
+    FounderMainlineState,
+} from './founderMainlineInterviewProgress';
+export {
+    FOUNDER_MAINLINE_INTERVIEW_FIELDS,
+    FOUNDER_MAINLINE_INTERVIEW_PROGRESS_ENDPOINT,
+    FOUNDER_MAINLINE_INTERVIEW_TOTAL_GROUPS,
+    buildFounderMainlineInterviewAnswers,
+    buildFounderMainlineModelReadyContext,
+    buildFounderMainlinePlanningPayload,
+    countFounderMainlineAnsweredGroups,
+    getFounderMainlineStateLabel,
+    requestFounderMainlineInterviewProgress,
+} from './founderMainlineInterviewProgress';
+export type { FounderMainlineAgentCreateSummary } from './founderMainlineDraftPlanSummary';
+export { buildFounderMainlineAgentCreateSummary } from './founderMainlineDraftPlanSummary';

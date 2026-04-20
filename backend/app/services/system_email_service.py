@@ -10,9 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import smtplib
-import ssl
-import uuid
+import smtplib  # noqa: F401 - retained for compatibility with existing tests/monkeypatches
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,7 +18,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, make_msgid
 
-from app.core.email import force_ipv4, send_smtp_email
+from app.core.email import force_ipv4, send_smtp_email  # noqa: F401 - retained for compatibility with existing tests
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +185,16 @@ async def deliver_broadcast_emails(recipients: Iterable[BroadcastEmailRecipient]
             logger.warning("Failed to deliver broadcast email to %s: %s", recipient.email, exc)
 
 
+async def run_background_email_job(job, *args, **kwargs) -> None:
+    """Execute a background email job and isolate failures from the request path."""
+    try:
+        result = job(*args, **kwargs)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        logger.warning("Background email job failed: %s", exc)
+
+
 # ── Email Templates ──────────────────────────────────────────────────────────
 
 # Default templates for each email scenario.
@@ -238,9 +246,6 @@ async def get_email_templates(db=None) -> dict[str, dict[str, str]]:
     Returns:
         A dict mapping scenario_key -> {"subject": str, "body": str}
     """
-    from sqlalchemy import select
-    from app.models.system_settings import SystemSetting
-
     templates = dict(DEFAULT_EMAIL_TEMPLATES)  # start with defaults
 
     if not db:

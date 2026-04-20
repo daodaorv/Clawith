@@ -1,10 +1,37 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { enterpriseApi, skillApi } from '../services/api';
+import {
+    enterpriseApi,
+    skillApi,
+    type DuoduoCoordinationPattern,
+    type DuoduoTemplateLibraryItem,
+    type DuoduoTemplateLibraryResponse,
+    type LLMProbeResult,
+    type SkillLibraryItem,
+    type SkillPackCatalogItem,
+} from '../services/api';
 import PromptModal from '../components/PromptModal';
 import FileBrowser from '../components/FileBrowser';
 import type { FileBrowserApi } from '../components/FileBrowser';
+import {
+    findTemplateByCanonicalName,
+    openSkillPackDetailState,
+    openTemplateDetailState,
+} from './enterpriseSettingsDetailNavigation';
+import {
+    filterSkillPackCatalog,
+    filterTemplateCatalog,
+} from './enterpriseSettingsCatalogFilters';
+import {
+    focusSkillPackCatalog,
+    focusTemplateCatalog,
+} from './enterpriseSettingsCatalogFocus';
+import { buildCatalogManagementLens } from './enterpriseSettingsCatalogLens';
+import {
+    buildSkillPackCatalogStats,
+    buildTemplateCatalogStats,
+} from './enterpriseSettingsCatalogStats';
 import { saveAccentColor, getSavedAccentColor, resetAccentColor, PRESET_COLORS } from '../utils/theme';
 import UserManagement from './UserManagement';
 import InvitationCodes from './InvitationCodes';
@@ -45,25 +72,144 @@ interface LLMProviderSpec {
     default_base_url?: string | null;
     supports_tool_choice: boolean;
     default_max_tokens: number;
+    base_url_required?: boolean;
+    base_url_editable?: boolean;
+    base_url_examples?: string[];
+    auth_scheme?: string;
+    probe_strategy?: string;
+    capabilities?: {
+        supports_tool_choice?: boolean;
+    };
+}
+
+interface ProbeUiState {
+    status: 'idle' | 'dirty' | 'testing' | 'test_success' | 'test_failed' | 'autofill_applied';
+    message: string;
+    detail?: string;
+    appliedFields?: ('resolved_provider' | 'recommended_model' | 'normalized_base_url')[];
+    result?: LLMProbeResult;
+}
+
+function LLMProbeStatusCard({ status, t }: { status: ProbeUiState; t: any }) {
+    const palette = {
+        idle: {
+            color: 'var(--text-secondary)',
+            background: 'rgba(148,163,184,0.08)',
+            border: 'rgba(148,163,184,0.2)',
+        },
+        dirty: {
+            color: 'rgb(180, 83, 9)',
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: 'rgba(245, 158, 11, 0.28)',
+        },
+        testing: {
+            color: 'rgb(29, 78, 216)',
+            background: 'rgba(59, 130, 246, 0.12)',
+            border: 'rgba(59, 130, 246, 0.28)',
+        },
+        test_success: {
+            color: 'rgb(21, 128, 61)',
+            background: 'rgba(34, 197, 94, 0.12)',
+            border: 'rgba(34, 197, 94, 0.28)',
+        },
+        test_failed: {
+            color: 'rgb(185, 28, 28)',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: 'rgba(239, 68, 68, 0.28)',
+        },
+        autofill_applied: {
+            color: 'rgb(17, 94, 89)',
+            background: 'rgba(20, 184, 166, 0.12)',
+            border: 'rgba(20, 184, 166, 0.28)',
+        },
+    } as const;
+    const tone = palette[status.status];
+    const stateLabels = {
+        idle: t('enterprise.llm.probeStates.idle', '\u5f85\u6d4b\u8bd5'),
+        dirty: t('enterprise.llm.probeStates.dirty', '\u5f85\u91cd\u6d4b'),
+        testing: t('enterprise.llm.probeStates.testing', '\u6d4b\u8bd5\u4e2d'),
+        test_success: t('enterprise.llm.probeStates.test_success', '\u901a\u8fc7'),
+        test_failed: t('enterprise.llm.probeStates.test_failed', '\u5931\u8d25'),
+        autofill_applied: t('enterprise.llm.probeStates.autofill_applied', '\u5df2\u81ea\u52a8\u586b\u5199'),
+    } as const;
+    const autofillFieldLabels = {
+        resolved_provider: t('enterprise.llm.autofillField.resolved_provider', '\u63d0\u4f9b\u5546'),
+        recommended_model: t('enterprise.llm.autofillField.recommended_model', '\u6a21\u578b\u540d'),
+        normalized_base_url: t('enterprise.llm.autofillField.normalized_base_url', 'Base URL'),
+    } as const;
+
+    return (
+        <div style={{
+            marginTop: '12px',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            border: `1px solid ${tone.border}`,
+            background: tone.background,
+            color: tone.color,
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '6px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600 }}>
+                    {t('enterprise.llm.probeStatusLabel', '\u8fde\u63a5\u63a2\u6d4b')}
+                </div>
+                <div style={{
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: 'rgba(255,255,255,0.5)',
+                }}>
+                    {stateLabels[status.status]}
+                </div>
+            </div>
+            <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                {status.message}
+            </div>
+            {status.detail && (
+                <div style={{ marginTop: '6px', fontSize: '12px', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+                    {status.detail}
+                </div>
+            )}
+            {status.result?.gateway_hint && (
+                <div style={{ marginTop: '8px', fontSize: '12px', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+                    <strong>{t('enterprise.llm.gatewayHintLabel', '\u63a5\u53e3\u8bc6\u522b\uff1a')}</strong> {status.result.gateway_hint}
+                </div>
+            )}
+            {status.result?.reply_preview && (
+                <div style={{ marginTop: '6px', fontSize: '12px', lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+                    <strong>{t('enterprise.llm.replyPreviewLabel', '\u8fd4\u56de\u9884\u89c8\uff1a')}</strong> {status.result.reply_preview}
+                </div>
+            )}
+            {!!status.appliedFields?.length && (
+                <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    {t('enterprise.llm.probeAppliedFields', {
+                        defaultValue: '\u5df2\u81ea\u52a8\u586b\u5199\uff1a{{fields}}',
+                        fields: status.appliedFields.map((field) => autofillFieldLabels[field]).join(' / '),
+                    })}
+                </div>
+            )}
+        </div>
+    );
 }
 
 const FALLBACK_LLM_PROVIDERS: LLMProviderSpec[] = [
-    { provider: 'anthropic', display_name: 'Anthropic', protocol: 'anthropic', default_base_url: 'https://api.anthropic.com', supports_tool_choice: false, default_max_tokens: 8192 },
-    { provider: 'openai', display_name: 'OpenAI', protocol: 'openai_compatible', default_base_url: 'https://api.openai.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
-    { provider: 'azure', display_name: 'Azure OpenAI', protocol: 'openai_compatible', default_base_url: '', supports_tool_choice: true, default_max_tokens: 16384 },
     { provider: 'deepseek', display_name: 'DeepSeek', protocol: 'openai_compatible', default_base_url: 'https://api.deepseek.com/v1', supports_tool_choice: true, default_max_tokens: 8192 },
-    { provider: 'minimax', display_name: 'MiniMax', protocol: 'openai_compatible', default_base_url: 'https://api.minimaxi.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
     { provider: 'qwen', display_name: 'Qwen (DashScope)', protocol: 'openai_compatible', default_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supports_tool_choice: true, default_max_tokens: 8192 },
     { provider: 'zhipu', display_name: 'Zhipu', protocol: 'openai_compatible', default_base_url: 'https://open.bigmodel.cn/api/paas/v4', supports_tool_choice: true, default_max_tokens: 8192 },
+    { provider: 'kimi', display_name: 'Kimi (Moonshot)', protocol: 'openai_compatible', default_base_url: 'https://api.moonshot.cn/v1', supports_tool_choice: true, default_max_tokens: 8192 },
     { provider: 'baidu', display_name: 'Baidu (Qianfan)', protocol: 'openai_compatible', default_base_url: 'https://qianfan.baidubce.com/v2', supports_tool_choice: false, default_max_tokens: 4096 },
+    { provider: 'openai', display_name: 'OpenAI', protocol: 'openai_compatible', default_base_url: 'https://api.openai.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
+    { provider: 'anthropic', display_name: 'Anthropic', protocol: 'anthropic', default_base_url: 'https://api.anthropic.com', supports_tool_choice: false, default_max_tokens: 8192 },
+    { provider: 'azure', display_name: 'Azure OpenAI', protocol: 'openai_compatible', default_base_url: '', supports_tool_choice: true, default_max_tokens: 16384 },
+    { provider: 'minimax', display_name: 'MiniMax', protocol: 'openai_compatible', default_base_url: 'https://api.minimaxi.com/v1', supports_tool_choice: true, default_max_tokens: 16384 },
     { provider: 'gemini', display_name: 'Gemini', protocol: 'gemini', default_base_url: 'https://generativelanguage.googleapis.com/v1beta', supports_tool_choice: true, default_max_tokens: 8192 },
     { provider: 'openrouter', display_name: 'OpenRouter', protocol: 'openai_compatible', default_base_url: 'https://openrouter.ai/api/v1', supports_tool_choice: true, default_max_tokens: 4096 },
-    { provider: 'kimi', display_name: 'Kimi (Moonshot)', protocol: 'openai_compatible', default_base_url: 'https://api.moonshot.cn/v1', supports_tool_choice: true, default_max_tokens: 8192 },
     { provider: 'vllm', display_name: 'vLLM', protocol: 'openai_compatible', default_base_url: 'http://localhost:8000/v1', supports_tool_choice: true, default_max_tokens: 4096 },
     { provider: 'ollama', display_name: 'Ollama', protocol: 'openai_compatible', default_base_url: 'http://localhost:11434/v1', supports_tool_choice: true, default_max_tokens: 4096 },
     { provider: 'sglang', display_name: 'SGLang', protocol: 'openai_compatible', default_base_url: 'http://localhost:30000/v1', supports_tool_choice: true, default_max_tokens: 4096 },
     { provider: 'custom', display_name: 'Custom', protocol: 'openai_compatible', default_base_url: '', supports_tool_choice: true, default_max_tokens: 4096 },
 ];
+
+const PREFERRED_PROVIDER_ORDER = ['deepseek', 'qwen', 'zhipu', 'kimi', 'baidu', 'openai', 'anthropic', 'custom'];
 
 const FEISHU_SYNC_PERM_JSON = `{
   "scopes": {
@@ -78,7 +224,7 @@ const FEISHU_SYNC_PERM_JSON = `{
 }`;
 
 
-// ─── Department Tree ───────────────────────────────
+// 鈹€鈹€鈹€ Department Tree 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function DeptTree({ departments, parentId, selectedDept, onSelect, level }: {
     departments: any[]; parentId: string | null; selectedDept: string | null;
     onSelect: (id: string | null) => void; level: number;
@@ -108,7 +254,7 @@ function DeptTree({ departments, parentId, selectedDept, onSelect, level }: {
                     >
                         <div>
                             <span style={{ color: 'var(--text-tertiary)', marginRight: '4px', fontSize: '11px' }}>
-                                {departments.some((c: any) => c.parent_id === d.id) ? '▾' : '·'}
+                                {departments.some((c: any) => c.parent_id === d.id) ? '?' : '?'}
                             </span>
                             {d.name}
                         </div>
@@ -125,7 +271,7 @@ function DeptTree({ departments, parentId, selectedDept, onSelect, level }: {
     );
 }
 
-// ─── SSO Channel Section ────────────────────────────────
+// 鈹€鈹€鈹€ SSO Channel Section 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function SsoChannelSection({ idpType, existingProvider, tenant, t }: {
     idpType: string; existingProvider: any; tenant: any; t: any;
 }) {
@@ -161,7 +307,7 @@ function SsoChannelSection({ idpType, existingProvider, tenant, t }: {
         } catch (e: any) {
             const msg = e?.message || '';
             if (msg.includes('IP address') || msg.includes('multi-tenant')) {
-                setSsoError(t('enterprise.identity.ssoIpConflict', 'IP 模式下只能有一个企业开启 SSO，当前已有其他企业占用。'));
+                setSsoError(t('enterprise.identity.ssoIpConflict', 'IP \u6a21\u5f0f\u4e0b\u53ea\u80fd\u6709\u4e00\u4e2a\u4f01\u4e1a\u5f00\u542f SSO\uff0c\u5f53\u524d\u5df2\u6709\u5176\u4ed6\u4f01\u4e1a\u5360\u7528\u3002'));
             } else {
                 setSsoError(msg || t('enterprise.identity.ssoToggleFailed', 'Failed to toggle SSO'));
             }
@@ -227,7 +373,7 @@ function SsoChannelSection({ idpType, existingProvider, tenant, t }: {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis'
                         }}>
-                            {domain ? (domain.startsWith('http') ? domain : `https://${domain}`) : t('enterprise.identity.ssoUrlEmpty', '请先开启 SSO 以生成地址')}
+                            {domain ? (domain.startsWith('http') ? domain : `https://${domain}`) : t('enterprise.identity.ssoUrlEmpty', 'SSO URL will appear here after saving')}
                         </div>
                         <LinearCopyButton
                             className="btn btn-ghost btn-sm"
@@ -260,7 +406,7 @@ function SsoChannelSection({ idpType, existingProvider, tenant, t }: {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis'
                         }}>
-                            {callbackUrl || t('enterprise.identity.ssoUrlEmpty', '请先开启 SSO 以生成地址')}
+                            {callbackUrl || t('enterprise.identity.ssoUrlEmpty', 'SSO URL will appear here after saving')}
                         </div>
                         <LinearCopyButton
                             className="btn btn-ghost btn-sm"
@@ -281,7 +427,7 @@ function SsoChannelSection({ idpType, existingProvider, tenant, t }: {
 }
 
 
-// ─── Org & Identity Tab ─────────────────────────────
+// 鈹€鈹€鈹€ Org & Identity Tab 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function OrgTab({ tenant }: { tenant: any }) {
     const { t } = useTranslation();
     const qc = useQueryClient();
@@ -579,7 +725,7 @@ function OrgTab({ tenant }: { tenant: any }) {
                 {['feishu', 'dingtalk', 'wecom'].includes(type) && (
                     <div style={{ background: 'var(--bg-primary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)', marginBottom: '20px', fontSize: '12px' }}>
                         <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '8px', color: 'var(--text-primary)' }}>
-                            👉 {t('enterprise.org.syncSetupGuide', 'Setup Guide & Required Permissions')}
+                            {t('enterprise.org.syncSetupGuide', 'Setup Guide & Required Permissions')}
                         </div>
                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                             {type === 'feishu' && (
@@ -598,7 +744,7 @@ function OrgTab({ tenant }: { tenant: any }) {
                                             style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '10px', color: '#abb2bf', padding: '4px 8px', background: 'rgba(255,255,255,0.1)', cursor: 'pointer', border: 'none', borderRadius: '4px', height: 'fit-content', minWidth: '60px' }}
                                             textToCopy={FEISHU_SYNC_PERM_JSON}
                                             label="Copy"
-                                            copiedLabel="Copied✓"
+                                            copiedLabel="Copied"
                                         />
                                         {FEISHU_SYNC_PERM_JSON}
                                     </div>
@@ -770,7 +916,7 @@ function OrgTab({ tenant }: { tenant: any }) {
                                         <div style={{ fontWeight: 500, fontSize: '13px' }}>{m.name}</div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                                             {m.provider_type && <span style={{ marginRight: '4px', padding: '1px 4px', borderRadius: '3px', background: 'var(--bg-secondary)', fontSize: '10px' }}>{m.provider_type}</span>}
-                                            {m.title || '-'} · {m.department_path || m.department_id || '-'}
+                                            {m.title || '-'} / {m.department_path || m.department_id || '-'}
                                         </div>
                                     </div>
                                 </div>
@@ -785,7 +931,7 @@ function OrgTab({ tenant }: { tenant: any }) {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* SSO status is now derived from per-channel toggles — no global switch */}
+            {/* SSO status is now derived from per-channel toggles 鈥?no global switch */}
 
             {/* 1. Identity Providers Section */}
             <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
@@ -830,7 +976,7 @@ function OrgTab({ tenant }: { tenant: any }) {
                                             <span className="badge badge-secondary" style={{ fontSize: '10px' }}>Not configured</span>
                                         )}
                                         <div style={{ color: 'var(--text-tertiary)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', fontSize: '12px' }}>
-                                            ▼
+                                            ?
                                         </div>
                                     </div>
                                 </div>
@@ -862,7 +1008,7 @@ function OrgTab({ tenant }: { tenant: any }) {
 }
 
 
-// ─── Theme Color Picker ────────────────────────────
+// 鈹€鈹€鈹€ Theme Color Picker 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function ThemeColorPicker() {
     const { t } = useTranslation();
     const [currentColor, setCurrentColor] = useState(getSavedAccentColor() || '');
@@ -940,8 +1086,8 @@ const PRESET_MODELS: Record<string, string[]> = {
     'azure': ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
 };
 
-// ─── Main Component ────────────────────────────────
-// ─── Enterprise KB Browser ─────────────────────────
+// 鈹€鈹€鈹€ Main Component 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 鈹€鈹€鈹€ Enterprise KB Browser 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function EnterpriseKBBrowser({ onRefresh }: { onRefresh: () => void; refreshKey: number }) {
     const kbAdapter: FileBrowserApi = {
         list: (path) => enterpriseApi.kbFiles(path),
@@ -953,10 +1099,63 @@ function EnterpriseKBBrowser({ onRefresh }: { onRefresh: () => void; refreshKey:
     return <FileBrowser api={kbAdapter} features={{ upload: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }} onRefresh={onRefresh} />;
 }
 
-// ─── Skills Tab ────────────────────────────────────
+// 鈹€鈹€鈹€ Skills Tab 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+function CatalogFilterPillRow({
+    label,
+    items,
+    activeKey,
+    onSelect,
+}: {
+    label: string;
+    items: Array<{ key: string; label: string; count: number }>;
+    activeKey: string;
+    onSelect: (key: string) => void;
+}) {
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                {label}
+            </span>
+            {items.map((item) => (
+                <button
+                    key={item.key}
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => onSelect(item.key)}
+                    style={{
+                        minWidth: 'auto',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        border: `1px solid ${activeKey === item.key ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                        background: activeKey === item.key ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '11px',
+                    }}
+                >
+                    <span>{item.label}</span>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {item.count}
+                    </span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function SkillsTab() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const isChineseUi = i18n.language?.toLowerCase().startsWith('zh');
     const [refreshKey, setRefreshKey] = useState(0);
+    const [libraryView, setLibraryView] = useState<'catalog' | 'files'>('catalog');
+    const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+    const [templateCatalogFilter, setTemplateCatalogFilter] = useState<'all' | 'pack-linked' | 'high-autonomy' | 'validated'>('all');
+    const [skillPackCatalogFilter, setSkillPackCatalogFilter] = useState<'all' | 'tool-required' | 'role-linked' | 'high-risk'>('all');
+    const [templateCatalogSpotlight, setTemplateCatalogSpotlight] = useState<string | null>(null);
+    const [skillPackCatalogSpotlight, setSkillPackCatalogSpotlight] = useState<string | null>(null);
+    const [selectedTemplateDetail, setSelectedTemplateDetail] = useState<DuoduoTemplateLibraryItem | null>(null);
+    const [selectedSkillPackDetail, setSelectedSkillPackDetail] = useState<SkillPackCatalogItem | null>(null);
     const [showClawhubModal, setShowClawhubModal] = useState(false);
     const [showUrlModal, setShowUrlModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -975,11 +1174,26 @@ function SkillsTab() {
     const [savingToken, setSavingToken] = useState(false);
     const [clawhubKeyInput, setClawhubKeyInput] = useState('');
     const [savingClawhubKey, setSavingClawhubKey] = useState(false);
+    const templateCatalogSectionRef = useRef<HTMLDivElement | null>(null);
+    const skillPackCatalogSectionRef = useRef<HTMLDivElement | null>(null);
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 4000);
     };
+
+    const { data: duoduoTemplateLibrary, isLoading: templateLibraryLoading } = useQuery<DuoduoTemplateLibraryResponse>({
+        queryKey: ['duoduo-template-library', 'enterprise-skills-tab'],
+        queryFn: () => enterpriseApi.duoduoTemplateLibrary(),
+    });
+    const { data: duoduoSkillPackCatalog, isLoading: skillPackCatalogLoading } = useQuery({
+        queryKey: ['duoduo-skill-packs', 'enterprise-skills-tab'],
+        queryFn: () => enterpriseApi.duoduoSkillPacks(),
+    });
+    const { data: librarySkills = [] } = useQuery<SkillLibraryItem[]>({
+        queryKey: ['global-skills', 'enterprise-skills-tab', refreshKey],
+        queryFn: skillApi.list,
+    });
 
     const adapter: FileBrowserApi = useMemo(() => ({
         list: (path: string) => skillApi.browse.list(path),
@@ -987,6 +1201,187 @@ function SkillsTab() {
         write: (path: string, content: string) => skillApi.browse.write(path, content),
         delete: (path: string) => skillApi.browse.delete(path),
     }), []);
+    const templateCards = duoduoTemplateLibrary?.items ?? [];
+    const skillPackCards = duoduoSkillPackCatalog?.items ?? [];
+    const scenarioLabel = duoduoTemplateLibrary?.scenario?.display_name_zh || duoduoSkillPackCatalog?.scenario?.display_name_zh || '';
+    const packLabelById = useMemo(
+        () => Object.fromEntries(
+            skillPackCards.map((pack: SkillPackCatalogItem) => [
+                pack.pack_id,
+                isChineseUi ? (pack.display_name_zh || pack.display_name_en) : (pack.display_name_en || pack.display_name_zh),
+            ]),
+        ),
+        [isChineseUi, skillPackCards],
+    );
+    const templateLabelByCanonical = useMemo(
+        () => Object.fromEntries(
+            templateCards.map((item: DuoduoTemplateLibraryItem) => [
+                item.canonical_name,
+                isChineseUi ? (item.display_name_zh || item.canonical_name) : item.canonical_name,
+            ]),
+        ),
+        [isChineseUi, templateCards],
+    );
+    const skillLabelByFolder = useMemo(
+        () => Object.fromEntries(
+            librarySkills.map((skill: SkillLibraryItem) => [
+                skill.folder_name,
+                isChineseUi ? (skill.display_name_zh || skill.name) : skill.name,
+            ]),
+        ),
+        [isChineseUi, librarySkills],
+    );
+    const skillPackById = useMemo(
+        () => Object.fromEntries(
+            skillPackCards.map((pack: SkillPackCatalogItem) => [pack.pack_id, pack]),
+        ),
+        [skillPackCards],
+    );
+    const catalogLoading = templateLibraryLoading || skillPackCatalogLoading;
+    const coordinationPatternById = useMemo(
+        () => Object.fromEntries(
+            (duoduoTemplateLibrary?.coordination_patterns ?? []).map((pattern: DuoduoCoordinationPattern) => [pattern.pattern_id, pattern]),
+        ),
+        [duoduoTemplateLibrary?.coordination_patterns],
+    );
+    const sourceById = useMemo(
+        () => Object.fromEntries(
+            (duoduoTemplateLibrary?.sources ?? []).map((source) => [source.source_id, source]),
+        ),
+        [duoduoTemplateLibrary?.sources],
+    );
+    const templatesByPackId = useMemo(
+        () => Object.fromEntries(
+            skillPackCards.map((pack: SkillPackCatalogItem) => [
+                pack.pack_id,
+                templateCards.filter((item: DuoduoTemplateLibraryItem) => item.recommended_skill_packs.includes(pack.pack_id)),
+            ]),
+        ),
+        [skillPackCards, templateCards],
+    );
+    const filteredTemplateCards = useMemo(
+        () => filterTemplateCatalog(templateCards, {
+            query: catalogSearchQuery,
+            filter: templateCatalogFilter,
+            packLabelById,
+        }),
+        [catalogSearchQuery, packLabelById, templateCards, templateCatalogFilter],
+    );
+    const filteredSkillPackCards = useMemo(
+        () => filterSkillPackCatalog(skillPackCards, {
+            query: catalogSearchQuery,
+            filter: skillPackCatalogFilter,
+            templateLabelByCanonical,
+            skillLabelByFolder,
+        }),
+        [catalogSearchQuery, skillLabelByFolder, skillPackCards, skillPackCatalogFilter, templateLabelByCanonical],
+    );
+    const templateCatalogStats = useMemo(
+        () => buildTemplateCatalogStats(templateCards),
+        [templateCards],
+    );
+    const skillPackCatalogStats = useMemo(
+        () => buildSkillPackCatalogStats(skillPackCards),
+        [skillPackCards],
+    );
+    const spotlightedTemplateCards = useMemo(
+        () => focusTemplateCatalog(templateCards, templateCatalogSpotlight),
+        [templateCards, templateCatalogSpotlight],
+    );
+    const spotlightedSkillPackCards = useMemo(
+        () => focusSkillPackCatalog(skillPackCards, skillPackCatalogSpotlight),
+        [skillPackCards, skillPackCatalogSpotlight],
+    );
+    const visibleTemplateCards = templateCatalogSpotlight ? spotlightedTemplateCards : filteredTemplateCards;
+    const visibleSkillPackCards = skillPackCatalogSpotlight ? spotlightedSkillPackCards : filteredSkillPackCards;
+    const templateSpotlightLabel = templateCatalogSpotlight
+        ? (templateLabelByCanonical[templateCatalogSpotlight] || templateCatalogSpotlight)
+        : '';
+    const skillPackSpotlightLabel = skillPackCatalogSpotlight
+        ? (packLabelById[skillPackCatalogSpotlight] || skillPackCatalogSpotlight)
+        : '';
+    const catalogManagementLens = useMemo(
+        () => buildCatalogManagementLens({
+            isChineseUi,
+            query: catalogSearchQuery,
+            templateFilter: templateCatalogFilter,
+            skillPackFilter: skillPackCatalogFilter,
+            templateSpotlightLabel,
+            skillPackSpotlightLabel,
+        }),
+        [
+            catalogSearchQuery,
+            isChineseUi,
+            skillPackCatalogFilter,
+            skillPackSpotlightLabel,
+            templateCatalogFilter,
+            templateSpotlightLabel,
+        ],
+    );
+    const templateManagementFilters = useMemo(
+        () => [
+            { key: 'all', label: isChineseUi ? '\u5168\u90e8\u6a21\u677f' : 'All', count: templateCatalogStats.all },
+            { key: 'validated', label: isChineseUi ? '\u5df2\u9a8c\u8bc1' : 'Validated', count: templateCatalogStats.validated },
+            { key: 'high-autonomy', label: isChineseUi ? '\u9ad8\u81ea\u6cbb' : 'High autonomy', count: templateCatalogStats.highAutonomy },
+            { key: 'pack-linked', label: isChineseUi ? '\u5df2\u5173\u8054\u80fd\u529b\u5305' : 'Pack-linked', count: templateCatalogStats.packLinked },
+        ],
+        [isChineseUi, templateCatalogStats],
+    );
+    const skillPackManagementFilters = useMemo(
+        () => [
+            { key: 'all', label: isChineseUi ? '\u5168\u90e8\u80fd\u529b\u5305' : 'All', count: skillPackCatalogStats.all },
+            { key: 'high-risk', label: isChineseUi ? '\u9ad8\u98ce\u9669' : 'High risk', count: skillPackCatalogStats.highRisk },
+            { key: 'role-linked', label: isChineseUi ? '\u5df2\u6302\u63a5\u89d2\u8272' : 'Role-linked', count: skillPackCatalogStats.roleLinked },
+            { key: 'tool-required', label: isChineseUi ? '\u5de5\u5177\u4f9d\u8d56' : 'Tool-required', count: skillPackCatalogStats.toolRequired },
+        ],
+        [isChineseUi, skillPackCatalogStats],
+    );
+
+    const applyDetailState = (nextState: {
+        selectedTemplateDetail: DuoduoTemplateLibraryItem | null;
+        selectedSkillPackDetail: SkillPackCatalogItem | null;
+    }) => {
+        setSelectedTemplateDetail(nextState.selectedTemplateDetail);
+        setSelectedSkillPackDetail(nextState.selectedSkillPackDetail);
+    };
+
+    const openTemplateDetail = (item: DuoduoTemplateLibraryItem) => {
+        applyDetailState(openTemplateDetailState({ selectedTemplateDetail, selectedSkillPackDetail }, item));
+    };
+
+    const openSkillPackDetail = (pack: SkillPackCatalogItem) => {
+        applyDetailState(openSkillPackDetailState({ selectedTemplateDetail, selectedSkillPackDetail }, pack));
+    };
+
+    const spotlightTemplateCatalog = (canonicalName: string) => {
+        setTemplateCatalogSpotlight(canonicalName);
+        templateCatalogSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const spotlightSkillPackCatalog = (packId: string) => {
+        setSkillPackCatalogSpotlight(packId);
+        skillPackCatalogSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const applyTemplateCatalogFilter = (filter: 'all' | 'pack-linked' | 'high-autonomy' | 'validated') => {
+        setTemplateCatalogFilter(filter);
+        setTemplateCatalogSpotlight(null);
+        templateCatalogSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const applySkillPackCatalogFilter = (filter: 'all' | 'tool-required' | 'role-linked' | 'high-risk') => {
+        setSkillPackCatalogFilter(filter);
+        setSkillPackCatalogSpotlight(null);
+        skillPackCatalogSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const resetCatalogControls = () => {
+        setCatalogSearchQuery('');
+        setTemplateCatalogFilter('all');
+        setSkillPackCatalogFilter('all');
+        setTemplateCatalogSpotlight(null);
+        setSkillPackCatalogSpotlight(null);
+    };
 
     const handleSearch = async () => {
         if (!searchQuery.trim()) return;
@@ -1006,8 +1401,8 @@ function SkillsTab() {
         setInstalling(slug);
         try {
             const result = await skillApi.clawhub.install(slug);
-            const tierLabel = result.tier === 1 ? 'Tier 1 (Pure Prompt)' : result.tier === 2 ? 'Tier 2 (CLI/API)' : 'Tier 3 (OpenClaw Native)';
-            showToast(`Installed "${result.name}" — ${tierLabel}, ${result.file_count} files`);
+            const tierLabel = result.tier === 1 ? (isChineseUi ? '\u7b49\u7ea7 1\uff08\u7eaf Prompt\uff09' : 'Tier 1 (Pure Prompt)') : result.tier === 2 ? (isChineseUi ? '\u7b49\u7ea7 2\uff08CLI/API\uff09' : 'Tier 2 (CLI/API)') : (isChineseUi ? '\u7b49\u7ea7 3\uff08OpenClaw \u539f\u751f\uff09' : 'Tier 3 (OpenClaw Native)');
+            showToast(isChineseUi ? `\u5df2\u5b89\u88c5 "${result.name}" - ${tierLabel}\uff0c\u5171 ${result.file_count} \u4e2a\u6587\u4ef6` : `Installed "${result.name}" - ${tierLabel}, ${result.file_count} files`);
             setRefreshKey(k => k + 1);
             // Remove from search results
             setSearchResults(prev => prev.filter(r => r.slug !== slug));
@@ -1035,7 +1430,7 @@ function SkillsTab() {
         setUrlImporting(true);
         try {
             const result = await skillApi.importFromUrl(urlInput);
-            showToast(`Imported "${result.name}" — ${result.file_count} files`);
+            showToast(isChineseUi ? `\u5df2\u5bfc\u5165 "${result.name}" - ${result.file_count} \u4e2a\u6587\u4ef6` : `Imported "${result.name}" - ${result.file_count} files`);
             setRefreshKey(k => k + 1);
             setShowUrlModal(false);
             setUrlInput('');
@@ -1048,9 +1443,9 @@ function SkillsTab() {
 
     const tierBadge = (tier: number) => {
         const styles: Record<number, { bg: string; color: string; label: string }> = {
-            1: { bg: 'rgba(52,199,89,0.12)', color: 'var(--success, #34c759)', label: 'Tier 1 · Pure Prompt' },
-            2: { bg: 'rgba(255,159,10,0.12)', color: 'var(--warning, #ff9f0a)', label: 'Tier 2 · CLI/API' },
-            3: { bg: 'rgba(255,59,48,0.12)', color: 'var(--error, #ff3b30)', label: 'Tier 3 · OpenClaw Native' },
+            1: { bg: 'rgba(52,199,89,0.12)', color: 'var(--success, #34c759)', label: isChineseUi ? '\u7b49\u7ea7 1 / \u7eaf Prompt' : 'Tier 1 / Pure Prompt' },
+            2: { bg: 'rgba(255,159,10,0.12)', color: 'var(--warning, #ff9f0a)', label: isChineseUi ? '\u7b49\u7ea7 2 / CLI/API' : 'Tier 2 / CLI/API' },
+            3: { bg: 'rgba(255,59,48,0.12)', color: 'var(--error, #ff3b30)', label: isChineseUi ? '\u7b49\u7ea7 3 / OpenClaw \u539f\u751f' : 'Tier 3 / OpenClaw Native' },
         };
         const s = styles[tier] || styles[1];
         return (
@@ -1268,13 +1663,860 @@ function SkillsTab() {
                 </div>
             )}
 
-            <FileBrowser
-                key={refreshKey}
-                api={adapter}
-                features={{ newFile: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }}
-                title={t('agent.skills.skillFiles', 'Skill Files')}
-                onRefresh={() => setRefreshKey(k => k + 1)}
-            />
+            <div style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '16px',
+                padding: '6px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-default)',
+                background: 'var(--bg-elevated)',
+                width: 'fit-content',
+            }}>
+                {[
+                    {
+                        key: 'catalog',
+                        label: isChineseUi ? '\u80fd\u529b\u76ee\u5f55' : 'Capability Catalog',
+                        description: isChineseUi ? '\u5148\u770b\u6a21\u677f\u5e93\u548c\u80fd\u529b\u5305' : 'Templates and packs first',
+                    },
+                    {
+                        key: 'files',
+                        label: isChineseUi ? '\u6280\u80fd\u6587\u4ef6' : 'Skill Files',
+                        description: isChineseUi ? '\u518d\u7ba1\u7406\u5e95\u5c42 skill \u6587\u4ef6' : 'Then manage low-level files',
+                    },
+                ].map((item) => (
+                    <button
+                        key={item.key}
+                        className="btn btn-ghost"
+                        onClick={() => setLibraryView(item.key as 'catalog' | 'files')}
+                        style={{
+                            minWidth: '170px',
+                            textAlign: 'left',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: libraryView === item.key ? 'var(--accent-subtle)' : 'transparent',
+                            border: `1px solid ${libraryView === item.key ? 'var(--accent-primary)' : 'transparent'}`,
+                            color: 'var(--text-primary)',
+                        }}
+                    >
+                        <div style={{ fontSize: '13px', fontWeight: 600 }}>{item.label}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '3px' }}>{item.description}</div>
+                    </button>
+                ))}
+            </div>
+
+            {libraryView === 'catalog' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{
+                        padding: '16px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-default)',
+                        background: 'linear-gradient(135deg, rgba(12,74,110,0.10), rgba(14,116,144,0.04))',
+                    }}>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {isChineseUi ? '\u9996\u573a\u666f\u4e1a\u52a1\u80fd\u529b\u76ee\u5f55' : 'First-scenario capability catalog'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.6 }}>
+                            {isChineseUi
+                                ? `${scenarioLabel || '\u591a\u591a\u6807\u51c6\u573a\u666f / \u591a\u4ee3\u7406\u534f\u540c'}\u3002\u4f7f\u7528\u6a21\u677f\u4e0e\u80fd\u529b\u5305\u4f5c\u4e3a\u4e3b\u8981\u7ba1\u7406\u89c6\u56fe\uff0c\u53ea\u6709\u5728\u9700\u8981\u65f6\u518d\u4e0b\u94bb\u5230\u5e95\u5c42 skill \u6587\u4ef6\u3002`
+                                : 'Use templates and packs as the primary management surface, then drop down to low-level skill files only when needed.'}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? `\u6a21\u677f ${templateCards.length} \u9879` : `${templateCards.length} templates`}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? `\u80fd\u529b\u5305 ${skillPackCards.length} \u9879` : `${skillPackCards.length} packs`}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? '\u4e2d\u6587\u4f18\u5148\u5c55\u793a' : 'Chinese-first display'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div
+                        ref={templateCatalogSectionRef}
+                        style={{
+                        padding: '16px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-default)',
+                        background: 'var(--bg-primary)',
+                        }}
+                    >
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {isChineseUi ? '\u5feb\u901f\u68c0\u7d22' : 'Quick find'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '6px', lineHeight: 1.6 }}>
+                            {isChineseUi
+                                ? '\u6309\u6a21\u677f\u540d\u3001\u80fd\u529b\u5305\u540d\u3001\u4e1a\u52a1\u76ee\u6807\u3001\u5173\u8054\u89d2\u8272\u6216\u5de5\u5177\u4f9d\u8d56\u5feb\u901f\u7f29\u5c0f\u8303\u56f4\u3002'
+                                : 'Search and narrow the catalog by names, goals, linked roles, or tool requirements.'}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <input
+                                className="input"
+                                value={catalogSearchQuery}
+                                onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                                placeholder={isChineseUi ? '\u641c\u7d22\u6a21\u677f\u3001\u80fd\u529b\u5305\u3001\u76ee\u6807\u3001\u89d2\u8272\u6216\u5de5\u5177' : 'Search templates, packs, goals, roles, or tools'}
+                                style={{ flex: '1 1 280px', minWidth: '240px', fontSize: '13px' }}
+                            />
+                            <button
+                                className="btn btn-secondary"
+                                type="button"
+                                onClick={resetCatalogControls}
+                                style={{ fontSize: '12px' }}
+                            >
+                                {isChineseUi ? '\u91cd\u7f6e' : 'Reset'}
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--accent-subtle)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? `\u6a21\u677f ${visibleTemplateCards.length}/${templateCards.length}` : `Templates ${visibleTemplateCards.length}/${templateCards.length}`}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--accent-subtle)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? `\u80fd\u529b\u5305 ${visibleSkillPackCards.length}/${skillPackCards.length}` : `Packs ${visibleSkillPackCards.length}/${skillPackCards.length}`}
+                            </span>
+                        </div>
+                        <div style={{
+                            marginTop: '14px',
+                            padding: '12px',
+                            borderRadius: '10px',
+                            border: '1px solid var(--border-default)',
+                            background: 'var(--bg-elevated)',
+                        }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {isChineseUi ? '\u5f53\u524d\u7ba1\u7406\u89c6\u89d2' : 'Current management lens'}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.6 }}>
+                                {catalogManagementLens.summary}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px', lineHeight: 1.6 }}>
+                                {catalogManagementLens.explanation}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                                {catalogManagementLens.segments.map((segment) => (
+                                    <span
+                                        key={segment.label}
+                                        style={{
+                                            fontSize: '11px',
+                                            padding: '4px 8px',
+                                            borderRadius: '999px',
+                                            color: segment.tone === 'focus' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                            background: segment.tone === 'neutral' ? 'var(--bg-primary)' : 'var(--accent-subtle)',
+                                            border: segment.tone === 'focus'
+                                                ? '1px solid var(--accent-primary)'
+                                                : '1px solid var(--border-default)',
+                                        }}
+                                    >
+                                        {segment.label}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                        <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {isChineseUi ? '\u7ba1\u7406\u901f\u89c8' : 'Management snapshot'}
+                            </div>
+                            <CatalogFilterPillRow
+                                label={isChineseUi ? '\u6a21\u677f\u89c6\u89d2' : 'Template view'}
+                                items={templateManagementFilters}
+                                activeKey={templateCatalogFilter}
+                                onSelect={(key) => applyTemplateCatalogFilter(key as 'all' | 'validated' | 'high-autonomy' | 'pack-linked')}
+                            />
+                            <CatalogFilterPillRow
+                                label={isChineseUi ? '\u80fd\u529b\u5305\u89c6\u89d2' : 'Pack view'}
+                                items={skillPackManagementFilters}
+                                activeKey={skillPackCatalogFilter}
+                                onSelect={(key) => applySkillPackCatalogFilter(key as 'all' | 'high-risk' | 'role-linked' | 'tool-required')}
+                            />
+                        </div>
+                        {(templateCatalogSpotlight || skillPackCatalogSpotlight) && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u5173\u8054\u805a\u7126' : 'Relation spotlight'}
+                                </span>
+                                {templateCatalogSpotlight && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost"
+                                        onClick={() => setTemplateCatalogSpotlight(null)}
+                                        style={{
+                                            minWidth: 'auto',
+                                            padding: '4px 10px',
+                                            fontSize: '11px',
+                                            borderRadius: '999px',
+                                            background: 'var(--accent-subtle)',
+                                            border: '1px solid var(--accent-primary)',
+                                        }}
+                                    >
+                                        {isChineseUi ? `\u6a21\u677f\u805a\u7126\uff1a${templateSpotlightLabel}` : `Template: ${templateSpotlightLabel}`}
+                                    </button>
+                                )}
+                                {skillPackCatalogSpotlight && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost"
+                                        onClick={() => setSkillPackCatalogSpotlight(null)}
+                                        style={{
+                                            minWidth: 'auto',
+                                            padding: '4px 10px',
+                                            fontSize: '11px',
+                                            borderRadius: '999px',
+                                            background: 'var(--accent-subtle)',
+                                            border: '1px solid var(--accent-primary)',
+                                        }}
+                                    >
+                                        {isChineseUi ? `\u80fd\u529b\u5305\u805a\u7126\uff1a${skillPackSpotlightLabel}` : `Pack: ${skillPackSpotlightLabel}`}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{
+                        padding: '16px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-default)',
+                        background: 'var(--bg-primary)',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u6a21\u677f\u5e93\u53ea\u8bfb\u89c6\u56fe' : 'Read-only template library'}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                    {isChineseUi ? '\u7528\u4e8e\u5ba1\u67e5\u89d2\u8272\u6a21\u677f\u3001\u63a8\u8350\u80fd\u529b\u5305\u548c\u9ed8\u8ba4\u8fb9\u754c\uff0c\u4e0d\u76f4\u63a5\u66b4\u9732\u4e0a\u6e38\u539f\u59cb\u9879\u76ee\u3002' : 'Review role templates, recommended packs, and default boundaries without exposing raw upstream projects.'}
+                                </div>
+                            </div>
+                        </div>
+                        {catalogLoading ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {isChineseUi ? '\u6b63\u5728\u52a0\u8f7d\u6a21\u677f\u5e93...' : 'Loading template library...'}
+                            </div>
+                        ) : templateCards.length === 0 ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {isChineseUi ? '\u5f53\u524d\u6ca1\u6709\u53ef\u5c55\u793a\u7684\u6a21\u677f\u5e93\u6570\u636e\u3002' : 'No template catalog data available.'}
+                            </div>
+                        ) : visibleTemplateCards.length === 0 ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {templateCatalogSpotlight
+                                    ? (isChineseUi ? '\u5f53\u524d\u6a21\u677f\u805a\u7126\u672a\u547d\u4e2d\u53ef\u5c55\u793a\u9879\uff0c\u6e05\u9664\u805a\u7126\u540e\u53ef\u8fd4\u56de\u5b8c\u6574\u76ee\u5f55\u3002' : 'The current template spotlight has no visible match. Clear it to return to the full catalog.')
+                                    : (isChineseUi ? '\u5f53\u524d\u641c\u7d22\u6216\u7b5b\u9009\u6761\u4ef6\u4e0b\u6ca1\u6709\u5339\u914d\u6a21\u677f\u3002' : 'No templates match the current search or filters.')}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                                {visibleTemplateCards.map((item: DuoduoTemplateLibraryItem) => (
+                                    <div
+                                        key={item.template_key}
+                                        onClick={() => openTemplateDetail(item)}
+                                        style={{
+                                            padding: '14px',
+                                            borderRadius: '10px',
+                                            border: templateCatalogSpotlight === item.canonical_name ? '1px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                            background: 'var(--bg-elevated)',
+                                            cursor: 'pointer',
+                                            boxShadow: templateCatalogSpotlight === item.canonical_name ? '0 0 0 2px rgba(14,116,144,0.12)' : 'none',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                                            <div>
+                                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                    {isChineseUi ? (item.display_name_zh || item.canonical_name) : item.canonical_name}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                                    {item.role_level} / {item.role_type}
+                                                </div>
+                                            </div>
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '2px 8px',
+                                                borderRadius: '999px',
+                                                background: 'var(--accent-subtle)',
+                                                color: 'var(--text-secondary)',
+                                            }}>
+                                                {item.validation_status}
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                            {item.primary_goal}
+                                        </div>
+                                        {!!item.recommended_skill_packs?.length && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                                {item.recommended_skill_packs.map((packId: string) => (
+                                                    <button
+                                                        key={`${item.template_key}-${packId}`}
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            spotlightSkillPackCatalog(packId);
+                                                        }}
+                                                        style={{
+                                                            fontSize: '10px',
+                                                            padding: '3px 8px',
+                                                            borderRadius: '999px',
+                                                            border: skillPackCatalogSpotlight === packId ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                                                            background: skillPackCatalogSpotlight === packId ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+                                                            color: 'var(--text-secondary)',
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        {packLabelById[packId] || packId}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {!!item.default_boundaries?.length && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: 1.6, marginTop: '10px' }}>
+                                                {isChineseUi ? '\u9ed8\u8ba4\u8fb9\u754c\uff1a' : 'Boundary: '}
+                                                {item.default_boundaries[0]}
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '11px', color: 'var(--accent-primary)', marginTop: '10px', fontWeight: 600 }}>
+                                            {isChineseUi ? '\u67e5\u770b\u6a21\u677f\u8be6\u60c5 ->' : 'View details ->'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div
+                        ref={skillPackCatalogSectionRef}
+                        style={{
+                        padding: '16px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-default)',
+                        background: 'var(--bg-primary)',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u80fd\u529b\u5305\u5e93\u53ea\u8bfb\u89c6\u56fe' : 'Read-only skill-pack library'}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                    {isChineseUi ? '\u4ee5\u80fd\u529b\u5305\u4f5c\u4e3a\u4ea7\u54c1\u5355\u4f4d\uff0c\u8ba9\u56e2\u961f\u5148\u770b\u5230\u4e1a\u52a1\u80fd\u529b\uff0c\u518d\u6309\u9700\u4e0b\u94bb\u5230\u5e95\u5c42 skill\u3002' : 'Use packs as the product surface so teams see business capabilities before raw skills.'}
+                                </div>
+                            </div>
+                        </div>
+                        {catalogLoading ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {isChineseUi ? '\u6b63\u5728\u52a0\u8f7d\u80fd\u529b\u5305...' : 'Loading skill packs...'}
+                            </div>
+                        ) : skillPackCards.length === 0 ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {isChineseUi ? '\u5f53\u524d\u6ca1\u6709\u53ef\u5c55\u793a\u7684\u80fd\u529b\u5305\u6570\u636e\u3002' : 'No skill-pack data available.'}
+                            </div>
+                        ) : visibleSkillPackCards.length === 0 ? (
+                            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                {skillPackCatalogSpotlight
+                                    ? (isChineseUi ? '\u5f53\u524d\u80fd\u529b\u5305\u805a\u7126\u672a\u547d\u4e2d\u53ef\u5c55\u793a\u9879\uff0c\u6e05\u9664\u805a\u7126\u540e\u53ef\u8fd4\u56de\u5b8c\u6574\u76ee\u5f55\u3002' : 'The current pack spotlight has no visible match. Clear it to return to the full catalog.')
+                                    : (isChineseUi ? '\u5f53\u524d\u641c\u7d22\u6216\u7b5b\u9009\u6761\u4ef6\u4e0b\u6ca1\u6709\u5339\u914d\u80fd\u529b\u5305\u3002' : 'No skill packs match the current search or filters.')}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                                {visibleSkillPackCards.map((pack: SkillPackCatalogItem) => (
+                                    <div
+                                        key={pack.pack_id}
+                                        onClick={() => openSkillPackDetail(pack)}
+                                        style={{
+                                            padding: '14px',
+                                            borderRadius: '10px',
+                                            border: skillPackCatalogSpotlight === pack.pack_id ? '1px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                                            background: 'var(--bg-elevated)',
+                                            cursor: 'pointer',
+                                            boxShadow: skillPackCatalogSpotlight === pack.pack_id ? '0 0 0 2px rgba(14,116,144,0.12)' : 'none',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                                            <div>
+                                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                    {isChineseUi ? pack.display_name_zh : pack.display_name_en}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                                    {pack.pack_id}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '999px',
+                                                    background: 'var(--bg-secondary)',
+                                                    color: 'var(--text-secondary)',
+                                                }}>
+                                                    {pack.risk_level}
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '999px',
+                                                    background: 'var(--accent-subtle)',
+                                                    color: 'var(--text-secondary)',
+                                                }}>
+                                                    {pack.status}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                            {pack.business_goal}
+                                        </div>
+                                        {!!pack.recommended_roles?.length && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                                {pack.recommended_roles.map((roleName: string) => (
+                                                    <button
+                                                        key={`${pack.pack_id}-${roleName}`}
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            spotlightTemplateCatalog(roleName);
+                                                        }}
+                                                        style={{
+                                                            fontSize: '10px',
+                                                            padding: '3px 8px',
+                                                            borderRadius: '999px',
+                                                            border: templateCatalogSpotlight === roleName ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                                                            background: templateCatalogSpotlight === roleName ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+                                                            color: 'var(--text-secondary)',
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        {templateLabelByCanonical[roleName] || roleName}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {!!pack.included_skills?.length && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                                                {pack.included_skills.map((slug: string) => (
+                                                    <span
+                                                        key={`${pack.pack_id}-${slug}`}
+                                                        style={{
+                                                            fontSize: '10px',
+                                                            padding: '3px 8px',
+                                                            borderRadius: '999px',
+                                                            background: 'rgba(148,163,184,0.12)',
+                                                            color: 'var(--text-secondary)',
+                                                        }}
+                                                    >
+                                                        {skillLabelByFolder[slug] || slug}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {!!pack.required_tools?.length && (
+                                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', lineHeight: 1.6, marginTop: '10px' }}>
+                                                {isChineseUi ? '\u4f9d\u8d56\u5de5\u5177\uff1a' : 'Required tools: '}
+                                                {pack.required_tools.join(' / ')}
+                                            </div>
+                                        )}
+                                        <div style={{ fontSize: '11px', color: 'var(--accent-primary)', marginTop: '10px', fontWeight: 600 }}>
+                                            {isChineseUi ? '\u67e5\u770b\u80fd\u529b\u5305\u8be6\u60c5 ->' : 'View pack details ->'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <FileBrowser
+                    key={refreshKey}
+                    api={adapter}
+                    features={{ newFile: true, newFolder: true, edit: true, delete: true, directoryNavigation: true }}
+                    title={t('agent.skills.skillFiles', 'Skill Files')}
+                    onRefresh={() => setRefreshKey(k => k + 1)}
+                />
+            )}
+
+            {selectedTemplateDetail && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.45)',
+                        zIndex: 10010,
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                    }}
+                    onClick={() => setSelectedTemplateDetail(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: 'min(560px, 92vw)',
+                            height: '100%',
+                            background: 'var(--bg-primary)',
+                            borderLeft: '1px solid var(--border-default)',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                            padding: '24px',
+                            overflowY: 'auto',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                    {isChineseUi ? '\u6a21\u677f\u8be6\u60c5' : 'Template details'}
+                                </div>
+                                <h3 style={{ margin: '6px 0 0', fontSize: '20px' }}>
+                                    {isChineseUi ? (selectedTemplateDetail.display_name_zh || selectedTemplateDetail.canonical_name) : selectedTemplateDetail.canonical_name}
+                                </h3>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '6px' }}>
+                                    {selectedTemplateDetail.template_key} / {selectedTemplateDetail.role_level} / {selectedTemplateDetail.role_type}
+                                </div>
+                            </div>
+                            <button className="btn btn-ghost" aria-label={isChineseUi ? '\u5173\u95ed' : 'Close'} onClick={() => setSelectedTemplateDetail(null)} style={{ fontSize: '18px', padding: '4px 8px', minWidth: 'auto' }}>
+                                {'\u00d7'}
+                            </button>
+                        </div>
+
+                        <div style={{ marginTop: '18px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--accent-subtle)', color: 'var(--text-secondary)' }}>
+                                {selectedTemplateDetail.validation_status}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? scenarioLabel : duoduoTemplateLibrary?.scenario?.scenario_id}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? `\u81ea\u6cbb\u7b49\u7ea7 ${selectedTemplateDetail.default_autonomy_level}` : `Autonomy ${selectedTemplateDetail.default_autonomy_level}`}
+                            </span>
+                        </div>
+
+                        <div style={{ marginTop: '20px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {isChineseUi ? '\u4e3b\u8981\u76ee\u6807' : 'Primary goal'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.7, marginTop: '8px' }}>
+                                {selectedTemplateDetail.primary_goal}
+                            </div>
+                        </div>
+
+                        {!!selectedTemplateDetail.recommended_skill_packs?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u63a8\u8350\u80fd\u529b\u5305' : 'Recommended packs'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                                    {selectedTemplateDetail.recommended_skill_packs.map((packId) => {
+                                        const pack = skillPackById[packId];
+                                        const packGoal = pack?.business_goal || duoduoTemplateLibrary?.skill_pack_refs.find((ref) => ref.skill_pack_id === packId)?.goal || '';
+                                        const relatedPackStyle: React.CSSProperties = {
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--border-default)',
+                                            background: 'var(--bg-elevated)',
+                                        };
+                                        if (pack) {
+                                            return (
+                                                <button
+                                                    key={`${selectedTemplateDetail.template_key}-${packId}`}
+                                                    type="button"
+                                                    onClick={() => openSkillPackDetail(pack)}
+                                                    style={{
+                                                        ...relatedPackStyle,
+                                                        textAlign: 'left',
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                                        {isChineseUi ? pack.display_name_zh : pack.display_name_en}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
+                                                        {packGoal}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: 'var(--accent-primary)', marginTop: '8px', fontWeight: 600 }}>
+                                                        {isChineseUi ? '\u67e5\u770b\u80fd\u529b\u5305\u8be6\u60c5 ->' : 'View pack details ->'}
+                                                    </div>
+                                                </button>
+                                            );
+                                        }
+                                        return (
+                                            <div key={`${selectedTemplateDetail.template_key}-${packId}`} style={relatedPackStyle}>
+                                                <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                                    {packId}
+                                                </div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
+                                                    {packGoal}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedTemplateDetail.default_boundaries?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u9ed8\u8ba4\u8fb9\u754c' : 'Default boundaries'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                    {selectedTemplateDetail.default_boundaries.map((boundary, index) => (
+                                        <div key={`${selectedTemplateDetail.template_key}-boundary-${index}`} style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            {index + 1}. {boundary}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedTemplateDetail.coordination_pattern_ids?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u534f\u540c\u6a21\u5f0f' : 'Coordination patterns'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                                    {selectedTemplateDetail.coordination_pattern_ids.map((patternId) => {
+                                        const pattern = coordinationPatternById[patternId];
+                                        if (!pattern) {
+                                            return null;
+                                        }
+                                        return (
+                                            <div key={`${selectedTemplateDetail.template_key}-${patternId}`} style={{ padding: '12px', borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                                    {isChineseUi ? pattern.display_name_zh : pattern.name}
+                                                </div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                                                    {pattern.topology_type}
+                                                </div>
+                                                {!!pattern.handoff_rules?.length && (
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                                        {pattern.handoff_rules[0]}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedTemplateDetail.source_ids?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u6765\u6e90\u53c2\u8003' : 'Source references'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                                    {selectedTemplateDetail.source_ids.map((sourceId) => {
+                                        const source = sourceById[sourceId];
+                                        if (!source) {
+                                            return null;
+                                        }
+                                        return (
+                                            <div key={`${selectedTemplateDetail.template_key}-${sourceId}`} style={{ padding: '12px', borderRadius: '8px', border: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
+                                                <div style={{ fontSize: '13px', fontWeight: 600 }}>{source.project_name}</div>
+                                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
+                                                    {source.primary_value}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {selectedSkillPackDetail && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.45)',
+                        zIndex: 10010,
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                    }}
+                    onClick={() => setSelectedSkillPackDetail(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: 'min(560px, 92vw)',
+                            height: '100%',
+                            background: 'var(--bg-primary)',
+                            borderLeft: '1px solid var(--border-default)',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                            padding: '24px',
+                            overflowY: 'auto',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                            <div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                                    {isChineseUi ? '\u80fd\u529b\u5305\u8be6\u60c5' : 'Skill-pack details'}
+                                </div>
+                                <h3 style={{ margin: '6px 0 0', fontSize: '20px' }}>
+                                    {isChineseUi ? selectedSkillPackDetail.display_name_zh : selectedSkillPackDetail.display_name_en}
+                                </h3>
+                                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '6px' }}>
+                                    {selectedSkillPackDetail.pack_id} / {selectedSkillPackDetail.version}
+                                </div>
+                            </div>
+                            <button className="btn btn-ghost" aria-label={isChineseUi ? '\u5173\u95ed' : 'Close'} onClick={() => setSelectedSkillPackDetail(null)} style={{ fontSize: '18px', padding: '4px 8px', minWidth: 'auto' }}>
+                                {'\u00d7'}
+                            </button>
+                        </div>
+
+                        <div style={{ marginTop: '18px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--accent-subtle)', color: 'var(--text-secondary)' }}>
+                                {selectedSkillPackDetail.status}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                                {selectedSkillPackDetail.risk_level}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                                {isChineseUi ? scenarioLabel : duoduoSkillPackCatalog?.scenario?.scenario_id}
+                            </span>
+                        </div>
+
+                        <div style={{ marginTop: '20px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {isChineseUi ? '\u4e1a\u52a1\u76ee\u6807' : 'Business goal'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.7, marginTop: '8px' }}>
+                                {selectedSkillPackDetail.business_goal}
+                            </div>
+                        </div>
+
+                        {!!selectedSkillPackDetail.recommended_roles?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u63a8\u8350\u89d2\u8272' : 'Recommended roles'}
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                                    {selectedSkillPackDetail.recommended_roles.map((roleName) => {
+                                        const linkedTemplate = findTemplateByCanonicalName(templateCards, roleName);
+                                        if (linkedTemplate) {
+                                            return (
+                                                <button
+                                                    key={`${selectedSkillPackDetail.pack_id}-${roleName}`}
+                                                    type="button"
+                                                    onClick={() => openTemplateDetail(linkedTemplate)}
+                                                    style={{
+                                                        fontSize: '11px',
+                                                        padding: '6px 10px',
+                                                        borderRadius: '999px',
+                                                        border: '1px solid var(--border-default)',
+                                                        background: 'var(--bg-elevated)',
+                                                        color: 'var(--text-secondary)',
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    {templateLabelByCanonical[roleName] || roleName}
+                                                    <span style={{ color: 'var(--accent-primary)', marginLeft: '6px', fontWeight: 600 }}>
+                                                        {isChineseUi ? '\u67e5\u770b\u6a21\u677f' : 'View template'}
+                                                    </span>
+                                                </button>
+                                            );
+                                        }
+                                        return (
+                                            <span
+                                                key={`${selectedSkillPackDetail.pack_id}-${roleName}`}
+                                                style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
+                                            >
+                                                {templateLabelByCanonical[roleName] || roleName}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedSkillPackDetail.included_skills?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u5305\u542b\u6280\u80fd' : 'Included skills'}
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                                    {selectedSkillPackDetail.included_skills.map((slug) => (
+                                        <span key={`${selectedSkillPackDetail.pack_id}-skill-${slug}`} style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '999px', background: 'rgba(148,163,184,0.12)', color: 'var(--text-secondary)' }}>
+                                            {skillLabelByFolder[slug] || slug}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedSkillPackDetail.required_tools?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u4f9d\u8d56\u5de5\u5177' : 'Required tools'}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                    {selectedSkillPackDetail.required_tools.join(' / ')}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!selectedSkillPackDetail.required_integrations?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u96c6\u6210\u4f9d\u8d56' : 'Required integrations'}
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                    {selectedSkillPackDetail.required_integrations.join(' / ')}
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '22px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {isChineseUi ? '\u517c\u5bb9\u8bf4\u660e' : 'Compatibility notes'}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '8px' }}>
+                                {selectedSkillPackDetail.compatibility_notes}
+                            </div>
+                        </div>
+
+                        {!!selectedSkillPackDetail.acceptance_metrics?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u9a8c\u6536\u53e3\u5f84' : 'Acceptance metrics'}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                    {selectedSkillPackDetail.acceptance_metrics.map((metric, index) => (
+                                        <div key={`${selectedSkillPackDetail.pack_id}-metric-${index}`} style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            {index + 1}. {metric}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {!!templatesByPackId[selectedSkillPackDetail.pack_id]?.length && (
+                            <div style={{ marginTop: '22px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isChineseUi ? '\u5173\u8054\u6a21\u677f' : 'Linked templates'}
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                                    {templatesByPackId[selectedSkillPackDetail.pack_id].map((item: DuoduoTemplateLibraryItem) => (
+                                        <button
+                                            key={`${selectedSkillPackDetail.pack_id}-${item.template_key}`}
+                                            type="button"
+                                            onClick={() => openTemplateDetail(item)}
+                                            style={{
+                                                fontSize: '11px',
+                                                padding: '6px 10px',
+                                                borderRadius: '999px',
+                                                border: '1px solid var(--border-default)',
+                                                background: 'var(--bg-elevated)',
+                                                color: 'var(--text-secondary)',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {isChineseUi ? (item.display_name_zh || item.canonical_name) : item.canonical_name}
+                                            <span style={{ color: 'var(--accent-primary)', marginLeft: '6px', fontWeight: 600 }}>
+                                                {isChineseUi ? '\u67e5\u770b\u6a21\u677f' : 'View template'}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Toast */}
             {toast && (
@@ -1434,7 +2676,7 @@ function SkillsTab() {
 
 
 
-// ─── Company Name Editor ───────────────────────────
+// 鈹€鈹€鈹€ Company Name Editor 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function CompanyNameEditor() {
     const { t } = useTranslation();
     const qc = useQueryClient();
@@ -1478,14 +2720,14 @@ function CompanyNameEditor() {
                 <button className="btn btn-primary" onClick={handleSave} disabled={saving || !name.trim()}>
                     {saving ? t('common.loading') : t('common.save', 'Save')}
                 </button>
-                {saved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>✅</span>}
+                {saved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>{t('enterprise.config.saved', 'Saved')}</span>}
             </div>
         </div>
     );
 }
 
 
-// ─── Company Timezone Editor ───────────────────────
+// 鈹€鈹€鈹€ Company Timezone Editor 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const COMMON_TIMEZONES = [
     'UTC',
     'Asia/Shanghai',
@@ -1539,7 +2781,7 @@ function CompanyTimezoneEditor() {
         <div className="card" style={{ padding: '16px', marginBottom: '24px' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500, fontSize: '13px', marginBottom: '4px' }}>🌐 {t('enterprise.timezone.title', 'Company Timezone')}</div>
+                    <div style={{ fontWeight: 500, fontSize: '13px', marginBottom: '4px' }}>{t('enterprise.timezone.title', 'Company Timezone')}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                         {t('enterprise.timezone.description', 'Default timezone for all agents. Agents can override individually.')}
                     </div>
@@ -1555,14 +2797,14 @@ function CompanyTimezoneEditor() {
                         <option key={tz} value={tz}>{tz}</option>
                     ))}
                 </select>
-                {saved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>✅</span>}
+                {saved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>{t('enterprise.config.saved', 'Saved')}</span>}
             </div>
         </div>
     );
 }
 
 
-// ── Broadcast Section ──────────────────────────
+// 鈹€鈹€ Broadcast Section 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function BroadcastSection() {
     const { t } = useTranslation();
     const [title, setTitle] = useState('');
@@ -1655,10 +2897,11 @@ function BroadcastSection() {
 }
 
 
-// ─── Identity Providers Tab ──────────────────────────
+// 鈹€鈹€鈹€ Identity Providers Tab 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export default function EnterpriseSettings() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const isChineseUi = i18n.language?.toLowerCase().startsWith('zh');
     const qc = useQueryClient();
     const [activeTab, setActiveTab] = useState<'llm' | 'org' | 'info' | 'approvals' | 'audit' | 'tools' | 'skills' | 'quotas' | 'users' | 'invites'>('info');
 
@@ -1716,7 +2959,7 @@ export default function EnterpriseSettings() {
                 if (d?.value?.content) {
                     setCompanyIntro(d.value.content);
                 }
-                // No fallback — each company starts empty with placeholder watermark
+                // No fallback 鈥?each company starts empty with placeholder watermark
             })
             .catch(() => { });
     }, [selectedTenantId]);
@@ -1747,7 +2990,7 @@ export default function EnterpriseSettings() {
     const [mcpRawInput, setMcpRawInput] = useState('');
     const [mcpTestResult, setMcpTestResult] = useState<any>(null);
     const [mcpTesting, setMcpTesting] = useState(false);
-    // Edit Server modal state — null when closed, otherwise the server to edit
+    // Edit Server modal state 鈥?null when closed, otherwise the server to edit
     const [editingMcpServer, setEditingMcpServer] = useState<{
         server_name: string;
         server_url: string;
@@ -1802,7 +3045,7 @@ export default function EnterpriseSettings() {
     };
     useEffect(() => { if (activeTab === 'tools') { loadAllTools(); loadAgentInstalledTools(); } }, [activeTab, selectedTenantId]);
 
-    // ─── Jina API Key
+    // 鈹€鈹€鈹€ Jina API Key
     const [jinaKey, setJinaKey] = useState('');
     const [jinaKeySaved, setJinaKeySaved] = useState(false);
     const [jinaKeySaving, setJinaKeySaving] = useState(false);
@@ -1812,7 +3055,7 @@ export default function EnterpriseSettings() {
         const token = localStorage.getItem('token');
         fetch('/api/enterprise/system-settings/jina_api_key', { headers: { Authorization: `Bearer ${token}` } })
             .then(r => r.json())
-            .then(d => { if (d.value?.api_key) setJinaKeyMasked(d.value.api_key.slice(0, 8) + '••••••••'); })
+            .then(d => { if (d.value?.api_key) setJinaKeyMasked(d.value.api_key.slice(0, 8) + '**************'); })
             .catch(() => { });
     }, [activeTab]);
     const saveJinaKey = async () => {
@@ -1823,7 +3066,7 @@ export default function EnterpriseSettings() {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ value: { api_key: jinaKey } }),
         });
-        setJinaKeyMasked(jinaKey.slice(0, 8) + '••••••••');
+        setJinaKeyMasked(jinaKey.slice(0, 8) + '**************');
         setJinaKey('');
         setJinaKeySaving(false);
         setJinaKeySaved(true);
@@ -1847,13 +3090,13 @@ export default function EnterpriseSettings() {
         enabled: !!selectedTenantId,
     });
 
-    // ─── Stats (scoped to selected tenant)
+    // 鈹€鈹€鈹€ Stats (scoped to selected tenant)
     const { data: stats } = useQuery({
         queryKey: ['enterprise-stats', selectedTenantId],
         queryFn: () => fetchJson<any>(`/enterprise/stats${selectedTenantId ? `?tenant_id=${selectedTenantId}` : ''}`),
     });
 
-    // ─── LLM Models
+    // 鈹€鈹€鈹€ LLM Models
     const { data: models = [] } = useQuery({
         queryKey: ['llm-models', selectedTenantId],
         queryFn: () => fetchJson<LLMModel[]>(`/enterprise/llm-models${selectedTenantId ? `?tenant_id=${selectedTenantId}` : ''}`),
@@ -1861,20 +3104,229 @@ export default function EnterpriseSettings() {
     });
     const [showAddModel, setShowAddModel] = useState(false);
     const [editingModelId, setEditingModelId] = useState<string | null>(null);
-    const [modelForm, setModelForm] = useState({ provider: 'anthropic', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' as string, request_timeout: '' as string, temperature: '' as string });
+    const [modelForm, setModelForm] = useState({ provider: PREFERRED_PROVIDER_ORDER[0] || 'deepseek', model: '', api_key: '', base_url: '', label: '', supports_vision: false, max_output_tokens: '' as string, request_timeout: '' as string, temperature: '' as string });
     const { data: providerSpecs = [] } = useQuery({
         queryKey: ['llm-provider-specs'],
         queryFn: () => fetchJson<LLMProviderSpec[]>('/enterprise/llm-providers'),
         enabled: activeTab === 'llm',
     });
-    const providerOptions = providerSpecs.length > 0 ? providerSpecs : FALLBACK_LLM_PROVIDERS;
+    const providerOptions = useMemo(() => {
+        const options = providerSpecs.length > 0 ? providerSpecs : FALLBACK_LLM_PROVIDERS;
+        const priority = new Map(PREFERRED_PROVIDER_ORDER.map((provider, index) => [provider, index]));
+        return [...options].sort((left, right) => {
+            const leftOrder = priority.get(left.provider) ?? Number.MAX_SAFE_INTEGER;
+            const rightOrder = priority.get(right.provider) ?? Number.MAX_SAFE_INTEGER;
+            if (leftOrder !== rightOrder) {
+                return leftOrder - rightOrder;
+            }
+            return left.display_name.localeCompare(right.display_name);
+        });
+    }, [providerSpecs]);
+    const [probeUi, setProbeUi] = useState<ProbeUiState>({
+        status: 'idle',
+        message: t('enterprise.llm.probeIdleMessage', '\u5148\u586b\u5199\u63d0\u4f9b\u5546\u3001\u6a21\u578b\u540d\u3001Base URL \u548c API Key\uff0c\u518d\u70b9\u51fb\u201c\u6d4b\u8bd5\u5e76\u81ea\u52a8\u586b\u5199\u201d\u3002'),
+        detail: '',
+        appliedFields: [],
+    });
+    const modelProviderOptions = useMemo(() => {
+        if (!modelForm.provider || providerOptions.some((provider) => provider.provider === modelForm.provider)) {
+            return providerOptions;
+        }
+        return [
+            ...providerOptions,
+            {
+                provider: modelForm.provider,
+                display_name: modelForm.provider,
+                protocol: 'openai_compatible',
+                default_base_url: null,
+                supports_tool_choice: true,
+                default_max_tokens: 4096,
+            },
+        ];
+    }, [modelForm.provider, providerOptions]);
+    const resetProbeUi = () => {
+        setProbeUi({
+            status: 'idle',
+            message: t('enterprise.llm.probeIdleMessage', '\u5148\u586b\u5199\u63d0\u4f9b\u5546\u3001\u6a21\u578b\u540d\u3001Base URL \u548c API Key\uff0c\u518d\u70b9\u51fb\u201c\u6d4b\u8bd5\u5e76\u81ea\u52a8\u586b\u5199\u201d\u3002'),
+            detail: '',
+            appliedFields: [],
+        });
+    };
+    const markProbeDirty = () => {
+        setProbeUi((current) => {
+            if (current.status === 'testing') {
+                return current;
+            }
+            return {
+                status: 'dirty',
+                message: t('enterprise.llm.probeDirtyMessage', '\u914d\u7f6e\u5df2\u4fee\u6539\uff0c\u8bf7\u91cd\u65b0\u6d4b\u8bd5\u4ee5\u66f4\u65b0\u8bc6\u522b\u7ed3\u679c\u3002'),
+                detail: '',
+                appliedFields: [],
+            };
+        });
+    };
+    const patchModelForm = (updates: Partial<typeof modelForm>) => {
+        setModelForm((current) => ({ ...current, ...updates }));
+        markProbeDirty();
+    };
+    const closeModelEditor = () => {
+        setShowAddModel(false);
+        setEditingModelId(null);
+        resetProbeUi();
+    };
+    const openAddModelEditor = () => {
+        setEditingModelId(null);
+        const defaultSpec = providerOptions[0];
+        setModelForm({
+            provider: defaultSpec?.provider || PREFERRED_PROVIDER_ORDER[0] || 'deepseek',
+            model: '',
+            api_key: '',
+            base_url: defaultSpec?.default_base_url || '',
+            label: '',
+            supports_vision: false,
+            max_output_tokens: defaultSpec ? String(defaultSpec.default_max_tokens) : '4096',
+            request_timeout: '',
+            temperature: '',
+        });
+        setShowAddModel(true);
+        resetProbeUi();
+    };
+    const openEditModelEditor = (model: LLMModel) => {
+        setEditingModelId(model.id);
+        setModelForm({
+            provider: model.provider,
+            model: model.model,
+            label: model.label,
+            base_url: model.base_url || '',
+            api_key: model.api_key_masked || '',
+            supports_vision: model.supports_vision || false,
+            max_output_tokens: model.max_output_tokens ? String(model.max_output_tokens) : '',
+            request_timeout: model.request_timeout ? String(model.request_timeout) : '',
+            temperature: model.temperature !== null && model.temperature !== undefined ? String(model.temperature) : '',
+        });
+        setShowAddModel(true);
+        resetProbeUi();
+    };
+    const getGatewayProfileLabel = (gatewayProfile?: string | null) => {
+        switch (gatewayProfile) {
+            case 'official-anthropic-compatible':
+                return t('enterprise.llm.gatewayProfiles.officialAnthropicCompatible');
+            case 'official-openai-compatible':
+                return t('enterprise.llm.gatewayProfiles.officialOpenAICompatible');
+            case 'official-openai-responses':
+                return t('enterprise.llm.gatewayProfiles.officialOpenAIResponses');
+            case 'custom-openai-compatible':
+                return t('enterprise.llm.gatewayProfiles.customOpenAICompatible');
+            case 'unknown':
+                return t('enterprise.llm.gatewayProfiles.unknown');
+            default:
+                return gatewayProfile || '';
+        }
+    };
+    const describeProbeResult = (result: LLMProbeResult, appliedFields: ('resolved_provider' | 'recommended_model' | 'normalized_base_url')[]) => {
+        const parts: string[] = [];
+        if (typeof result.latency_ms === 'number') {
+            parts.push(t('enterprise.llm.probeLatency', { latency: result.latency_ms, defaultValue: '\u5ef6\u8fdf {{latency}}ms' }));
+        }
+        const gatewayLabel = getGatewayProfileLabel(result.gateway_profile);
+        if (gatewayLabel) {
+            parts.push(t('enterprise.llm.probeGatewayHint', { hint: gatewayLabel }));
+        }
+        if (result.resolved_provider) {
+            parts.push(t('enterprise.llm.probeResolvedProvider', { provider: result.resolved_provider, defaultValue: '\u8bc6\u522b\u63d0\u4f9b\u5546\uff1a{{provider}}' }));
+        }
+        if (result.recommended_model) {
+            parts.push(t('enterprise.llm.probeRecommendedModel', { model: result.recommended_model, defaultValue: '\u5efa\u8bae\u6a21\u578b\uff1a{{model}}' }));
+        }
+        if (result.normalized_base_url) {
+            parts.push(t('enterprise.llm.probeNormalizedBaseUrl', { url: result.normalized_base_url, defaultValue: '\u89c4\u8303 Base URL\uff1a{{url}}' }));
+        }
+        if (appliedFields.length > 0) {
+            parts.push(t('enterprise.llm.probeAutofillSummary', '\u5df2\u6309\u63a2\u6d4b\u7ed3\u679c\u81ea\u52a8\u56de\u586b'));
+        }
+        return parts.join(' / ');
+    };
+    const runLlmProbe = async () => {
+        setProbeUi({
+            status: 'testing',
+            message: t('enterprise.llm.testingAndAutofill', '\u6d4b\u8bd5\u4e2d\uff0c\u6b63\u5728\u8bc6\u522b\u63a5\u53e3...'),
+            detail: '',
+            appliedFields: [],
+        });
+        try {
+            const apiKey = modelForm.api_key.trim();
+            const result = await enterpriseApi.llmProbe({
+                provider: modelForm.provider,
+                model: modelForm.model.trim(),
+                base_url: modelForm.base_url.trim() || undefined,
+                api_key: apiKey && !apiKey.startsWith('****') ? apiKey : undefined,
+                model_id: editingModelId || undefined,
+            });
+            if (!result.success) {
+                const errorText = result.error_message || result.error_code || t('enterprise.llm.probeFailedFallback', '\u8fde\u63a5\u6d4b\u8bd5\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 API Key\u3001\u6a21\u578b\u540d\u548c Base URL\u3002');
+                const detail = [
+                    result.error_code ? t('enterprise.llm.probeErrorCode', { code: result.error_code, defaultValue: '\u9519\u8bef\u4ee3\u7801\uff1a{{code}}' }) : '',
+                    typeof result.latency_ms === 'number' ? t('enterprise.llm.probeLatency', { latency: result.latency_ms, defaultValue: '\u5ef6\u8fdf {{latency}}ms' }) : '',
+                ].filter(Boolean).join(' / ');
+                setProbeUi({
+                    status: 'test_failed',
+                    message: t('enterprise.llm.probeFailedInline', { error: errorText, defaultValue: '\u6d4b\u8bd5\u5931\u8d25\uff1a{{error}}' }),
+                    detail,
+                    appliedFields: [],
+                    result,
+                });
+                return;
+            }
+
+            const appliedFields: ('resolved_provider' | 'recommended_model' | 'normalized_base_url')[] = [];
+            const nextProvider = result.resolved_provider || modelForm.provider;
+            const nextModel = result.recommended_model || modelForm.model;
+            const nextBaseUrl = result.normalized_base_url || modelForm.base_url;
+
+            if (result.resolved_provider && result.resolved_provider !== modelForm.provider) {
+                appliedFields.push('resolved_provider');
+            }
+            if (result.recommended_model && result.recommended_model !== modelForm.model) {
+                appliedFields.push('recommended_model');
+            }
+            if (result.normalized_base_url && result.normalized_base_url !== modelForm.base_url) {
+                appliedFields.push('normalized_base_url');
+            }
+
+            setModelForm((current) => ({
+                ...current,
+                provider: nextProvider,
+                model: nextModel,
+                base_url: nextBaseUrl,
+            }));
+
+            setProbeUi({
+                status: appliedFields.length > 0 ? 'autofill_applied' : 'test_success',
+                message: appliedFields.length > 0
+                    ? t('enterprise.llm.probeAutofillAppliedMessage', '\u6d4b\u8bd5\u6210\u529f\uff0c\u5df2\u81ea\u52a8\u586b\u5199\u8bc6\u522b\u51fa\u7684\u914d\u7f6e\u3002')
+                    : t('enterprise.llm.probeSuccessMessage', '\u6d4b\u8bd5\u6210\u529f\uff0c\u53ef\u4ee5\u7ee7\u7eed\u4fdd\u5b58\u5f53\u524d\u6a21\u578b\u3002'),
+                detail: describeProbeResult(result, appliedFields),
+                appliedFields,
+                result,
+            });
+        } catch (e: any) {
+            setProbeUi({
+                status: 'test_failed',
+                message: t('enterprise.llm.probeRequestError', { message: e?.message || t('common.error'), defaultValue: '\u8bf7\u6c42\u5931\u8d25\uff1a{message}' }),
+                detail: '',
+                appliedFields: [],
+            });
+        }
+    };
+    const canRunProbe = Boolean(modelForm.model.trim()) && (Boolean(editingModelId) || Boolean(modelForm.api_key.trim()));
+    const canSaveModel = Boolean(modelForm.model.trim()) && (Boolean(editingModelId) || Boolean(modelForm.api_key.trim()));
     const addModel = useMutation({
         mutationFn: (data: any) => fetchJson(`/enterprise/llm-models${selectedTenantId ? `?tenant_id=${selectedTenantId}` : ''}`, { method: 'POST', body: JSON.stringify(data) }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }); setShowAddModel(false); setEditingModelId(null); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }); closeModelEditor(); },
     });
     const updateModel = useMutation({
         mutationFn: ({ id, data }: { id: string; data: any }) => fetchJson(`/enterprise/llm-models/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }); setShowAddModel(false); setEditingModelId(null); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }); closeModelEditor(); },
     });
     const deleteModel = useMutation({
         mutationFn: async ({ id, force = false }: { id: string; force?: boolean }) => {
@@ -1902,7 +3354,7 @@ export default function EnterpriseSettings() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['llm-models', selectedTenantId] }),
     });
 
-    // ─── Approvals
+    // 鈹€鈹€鈹€ Approvals
     const { data: approvals = [] } = useQuery({
         queryKey: ['approvals', selectedTenantId],
         queryFn: () => fetchJson<any[]>(`/enterprise/approvals${selectedTenantId ? `?tenant_id=${selectedTenantId}` : ''}`),
@@ -1914,7 +3366,7 @@ export default function EnterpriseSettings() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['approvals', selectedTenantId] }),
     });
 
-    // ─── Audit Logs
+    // 鈹€鈹€鈹€ Audit Logs
     const BG_ACTIONS = ['supervision_tick', 'supervision_fire', 'supervision_error', 'schedule_tick', 'schedule_fire', 'schedule_error', 'heartbeat_tick', 'heartbeat_fire', 'heartbeat_error', 'server_startup'];
     const { data: auditLogs = [] } = useQuery({
         queryKey: ['audit-logs', selectedTenantId],
@@ -1951,27 +3403,14 @@ export default function EnterpriseSettings() {
                     ))}
                 </div>
 
-                {/* ── LLM Model Pool ── */}
+                {/* 鈹€鈹€ LLM Model Pool 鈹€鈹€ */}
                 {activeTab === 'llm' && (
                     <div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-                            <button className="btn btn-primary" onClick={() => {
-                                setEditingModelId(null);
-                                const defaultSpec = providerOptions[0];
-                                setModelForm({
-                                    provider: defaultSpec?.provider || 'anthropic',
-                                    model: '', api_key: '',
-                                    base_url: defaultSpec?.default_base_url || '',
-                                    label: '', supports_vision: false,
-                                    max_output_tokens: defaultSpec ? String(defaultSpec.default_max_tokens) : '4096',
-                                    request_timeout: '',
-                                    temperature: '',
-                                });
-                                setShowAddModel(true);
-                            }}>+ {t('enterprise.llm.addModel')}</button>
+                            <button className="btn btn-primary" onClick={openAddModelEditor}>+ {t('enterprise.llm.addModel')}</button>
                         </div>
 
-                        {/* Add Model form — only shown at top when adding new */}
+                        {/* Add Model form 鈥?only shown at top when adding new */}
                         {showAddModel && !editingModelId && (
                             <div className="card" style={{ marginBottom: '16px' }}>
                                 <h3 style={{ marginBottom: '16px' }}>{t('enterprise.llm.addModel')}</h3>
@@ -1990,9 +3429,9 @@ export default function EnterpriseSettings() {
                                             if (spec) {
                                                 updates.max_output_tokens = String(spec.default_max_tokens);
                                             }
-                                            setModelForm(f => ({ ...f, ...updates }));
+                                            patchModelForm(updates);
                                         }}>
-                                            {providerOptions.map((p) => (
+                                            {modelProviderOptions.map((p) => (
                                                 <option key={p.provider} value={p.provider}>{p.display_name}</option>
                                             ))}
                                         </select>
@@ -2003,72 +3442,52 @@ export default function EnterpriseSettings() {
                                             className="form-input"
                                             placeholder={t('enterprise.llm.modelPlaceholder', 'e.g. claude-sonnet-4-20250514')}
                                             value={modelForm.model}
-                                            onChange={e => setModelForm({ ...modelForm, model: e.target.value })}
+                                            onChange={e => patchModelForm({ model: e.target.value })}
                                         />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">{t('enterprise.llm.label')}</label>
-                                        <input className="form-input" placeholder={t('enterprise.llm.labelPlaceholder')} value={modelForm.label} onChange={e => setModelForm({ ...modelForm, label: e.target.value })} />
+                                        <input className="form-input" placeholder={t('enterprise.llm.labelPlaceholder')} value={modelForm.label} onChange={e => patchModelForm({ label: e.target.value })} />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">{t('enterprise.llm.baseUrl')}</label>
-                                        <input className="form-input" placeholder={t('enterprise.llm.baseUrlPlaceholder')} value={modelForm.base_url} onChange={e => setModelForm({ ...modelForm, base_url: e.target.value })} />
+                                        <input className="form-input" placeholder={t('enterprise.llm.baseUrlPlaceholder')} value={modelForm.base_url} onChange={e => patchModelForm({ base_url: e.target.value })} />
                                     </div>
                                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                                         <label className="form-label">{t('enterprise.llm.apiKey')}</label>
-                                        <input className="form-input" type="password" placeholder={t('enterprise.llm.apiKeyPlaceholder')} value={modelForm.api_key} onChange={e => setModelForm({ ...modelForm, api_key: e.target.value })} />
+                                        <input className="form-input" type="password" placeholder={t('enterprise.llm.apiKeyPlaceholder')} value={modelForm.api_key} onChange={e => patchModelForm({ api_key: e.target.value })} />
                                     </div>
                                     <div className="form-group" style={{ gridColumn: 'span 2' }}>
                                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                                            <input type="checkbox" checked={modelForm.supports_vision} onChange={e => setModelForm({ ...modelForm, supports_vision: e.target.checked })} />
+                                            <input type="checkbox" checked={modelForm.supports_vision} onChange={e => patchModelForm({ supports_vision: e.target.checked })} />
                                             {t('enterprise.llm.supportsVision')}
                                             <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('enterprise.llm.supportsVisionDesc')}</span>
                                         </label>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">{t('enterprise.llm.maxOutputTokens', 'Max Output Tokens')}</label>
-                                        <input className="form-input" type="number" placeholder={t('enterprise.llm.maxOutputTokensPlaceholder', 'e.g. 4096')} value={modelForm.max_output_tokens} onChange={e => setModelForm({ ...modelForm, max_output_tokens: e.target.value })} />
+                                        <input className="form-input" type="number" placeholder={t('enterprise.llm.maxOutputTokensPlaceholder', 'e.g. 4096')} value={modelForm.max_output_tokens} onChange={e => patchModelForm({ max_output_tokens: e.target.value })} />
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.maxOutputTokensDesc', 'Limits generation length')}</div>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">{t('enterprise.llm.requestTimeout', 'Request Timeout (s)')}</label>
-                                        <input className="form-input" type="number" min="1" placeholder={t('enterprise.llm.requestTimeoutPlaceholder', 'e.g. 120 (Leave empty for default)')} value={modelForm.request_timeout} onChange={e => setModelForm({ ...modelForm, request_timeout: e.target.value })} />
+                                        <input className="form-input" type="number" min="1" placeholder={t('enterprise.llm.requestTimeoutPlaceholder', 'e.g. 120 (Leave empty for default)')} value={modelForm.request_timeout} onChange={e => patchModelForm({ request_timeout: e.target.value })} />
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.requestTimeoutDesc', 'Increase for slow local models.')}</div>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">{t('enterprise.llm.temperature', 'Temperature')}</label>
-                                        <input className="form-input" type="number" step="0.1" min="0" max="2" placeholder={t('enterprise.llm.temperaturePlaceholder', 'e.g. 0.7 or 1.0 (Leave empty for default)')} value={modelForm.temperature} onChange={e => setModelForm({ ...modelForm, temperature: e.target.value })} />
+                                        <input className="form-input" type="number" step="0.1" min="0" max="2" placeholder={t('enterprise.llm.temperaturePlaceholder', 'e.g. 0.7 or 1.0 (Leave empty for default)')} value={modelForm.temperature} onChange={e => patchModelForm({ temperature: e.target.value })} />
                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.temperatureDesc', 'Leave empty to use the provider default. o1/o3 reasoning models usually require 1.0')}</div>
                                     </div>
                                 </div>
+                                <LLMProbeStatusCard status={probeUi} t={t} />
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    <button className="btn btn-secondary" onClick={() => { setShowAddModel(false); setEditingModelId(null); }}>{t('common.cancel')}</button>
-                                    <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} disabled={!modelForm.model || !modelForm.api_key} onClick={async () => {
-                                        const btn = document.activeElement as HTMLButtonElement;
-                                        const origText = btn?.textContent || '';
-                                        if (btn) btn.textContent = t('enterprise.llm.testing');
-                                        try {
-                                            const token = localStorage.getItem('token');
-                                            const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
-                                            if (modelForm.api_key) testData.api_key = modelForm.api_key;
-                                            const res = await fetch('/api/enterprise/llm-test', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                                body: JSON.stringify(testData),
-                                            });
-                                            const result = await res.json();
-                                            if (result.success) {
-                                                if (btn) { btn.textContent = t('enterprise.llm.testSuccess', { latency: result.latency_ms }); btn.style.color = 'var(--success)'; }
-                                                setTimeout(() => { if (btn) { btn.textContent = origText; btn.style.color = ''; } }, 3000);
-                                            } else {
-                                                alert(t('enterprise.llm.testFailed', { error: result.error || 'Unknown error', latency: result.latency_ms }));
-                                                if (btn) btn.textContent = origText;
-                                            }
-                                        } catch (e: any) {
-                                            alert(t('enterprise.llm.testError', { message: e.message }));
-                                            if (btn) btn.textContent = origText;
-                                        }
-                                    }}>{t('enterprise.llm.test')}</button>
+                                    <button className="btn btn-secondary" onClick={closeModelEditor}>{t('common.cancel')}</button>
+                                    <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} disabled={!canRunProbe || probeUi.status === 'testing'} onClick={runLlmProbe}>
+                                        {probeUi.status === 'testing'
+                                            ? t('enterprise.llm.testingAndAutofill', '\u6d4b\u8bd5\u4e2d\uff0c\u6b63\u5728\u8bc6\u522b\u63a5\u53e3...')
+                                            : t('enterprise.llm.testAndAutofill', '\u6d4b\u8bd5\u5e76\u81ea\u52a8\u586b\u5199')}
+                                    </button>
                                     <button className="btn btn-primary" onClick={() => {
                                         const data = {
                                             ...modelForm,
@@ -2077,7 +3496,7 @@ export default function EnterpriseSettings() {
                                             temperature: modelForm.temperature !== '' ? Number(modelForm.temperature) : null
                                         };
                                         addModel.mutate(data);
-                                    }} disabled={!modelForm.model || !modelForm.api_key}>
+                                    }} disabled={!canSaveModel}>
                                         {t('common.save')}
                                     </button>
                                 </div>
@@ -2090,20 +3509,23 @@ export default function EnterpriseSettings() {
                                     {editingModelId === m.id ? (
                                         /* Inline edit form */
                                         <div className="card" style={{ border: '1px solid var(--accent-primary)' }}>
-                                            <h3 style={{ marginBottom: '16px' }}>Edit Model</h3>
+                                            <h3 style={{ marginBottom: '16px' }}>{t('enterprise.llm.editModel')}</h3>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.provider')}</label>
                                                     <select className="form-input" value={modelForm.provider} onChange={e => {
                                                         const newProvider = e.target.value;
-                                                        setModelForm(f => ({ ...f, provider: newProvider }));
+                                                        const spec = providerOptions.find((provider) => provider.provider === newProvider);
+                                                        const updates: Partial<typeof modelForm> = { provider: newProvider };
+                                                        if (spec) {
+                                                            updates.base_url = spec.default_base_url || '';
+                                                            updates.max_output_tokens = String(spec.default_max_tokens);
+                                                        }
+                                                        patchModelForm(updates);
                                                     }}>
-                                                        {providerOptions.map((p) => (
+                                                        {modelProviderOptions.map((p) => (
                                                             <option key={p.provider} value={p.provider}>{p.display_name}</option>
                                                         ))}
-                                                        {!providerOptions.some((p) => p.provider === modelForm.provider) && (
-                                                            <option value={modelForm.provider}>{modelForm.provider}</option>
-                                                        )}
                                                     </select>
                                                 </div>
                                                 <div className="form-group">
@@ -2112,73 +3534,52 @@ export default function EnterpriseSettings() {
                                                         className="form-input"
                                                         placeholder={t('enterprise.llm.modelPlaceholder', 'e.g. claude-sonnet-4-20250514')}
                                                         value={modelForm.model}
-                                                        onChange={e => setModelForm({ ...modelForm, model: e.target.value })}
+                                                        onChange={e => patchModelForm({ model: e.target.value })}
                                                     />
                                                 </div>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.label')}</label>
-                                                    <input className="form-input" placeholder={t('enterprise.llm.labelPlaceholder')} value={modelForm.label} onChange={e => setModelForm({ ...modelForm, label: e.target.value })} />
+                                                    <input className="form-input" placeholder={t('enterprise.llm.labelPlaceholder')} value={modelForm.label} onChange={e => patchModelForm({ label: e.target.value })} />
                                                 </div>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.baseUrl')}</label>
-                                                    <input className="form-input" placeholder={t('enterprise.llm.baseUrlPlaceholder')} value={modelForm.base_url} onChange={e => setModelForm({ ...modelForm, base_url: e.target.value })} />
+                                                    <input className="form-input" placeholder={t('enterprise.llm.baseUrlPlaceholder')} value={modelForm.base_url} onChange={e => patchModelForm({ base_url: e.target.value })} />
                                                 </div>
                                                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                                                     <label className="form-label">{t('enterprise.llm.apiKey')}</label>
-                                                    <input className="form-input" type="password" placeholder="•••••••• (Leave blank to keep unchanged)" value={modelForm.api_key} onChange={e => setModelForm({ ...modelForm, api_key: e.target.value })} />
+                                                    <input className="form-input" type="password" placeholder={t('enterprise.llm.apiKeyKeepPlaceholder', isChineseUi ? '\u7559\u7a7a\u5219\u4fdd\u7559\u5f53\u524d API Key' : 'Leave blank to keep the current API key')} value={modelForm.api_key} onChange={e => patchModelForm({ api_key: e.target.value })} />
                                                 </div>
                                                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                                                        <input type="checkbox" checked={modelForm.supports_vision} onChange={e => setModelForm({ ...modelForm, supports_vision: e.target.checked })} />
+                                                        <input type="checkbox" checked={modelForm.supports_vision} onChange={e => patchModelForm({ supports_vision: e.target.checked })} />
                                                         {t('enterprise.llm.supportsVision')}
                                                         <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('enterprise.llm.supportsVisionDesc')}</span>
                                                     </label>
                                                 </div>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.maxOutputTokens', 'Max Output Tokens')}</label>
-                                                    <input className="form-input" type="number" placeholder={t('enterprise.llm.maxOutputTokensPlaceholder', 'e.g. 4096')} value={modelForm.max_output_tokens} onChange={e => setModelForm({ ...modelForm, max_output_tokens: e.target.value })} />
+                                                    <input className="form-input" type="number" placeholder={t('enterprise.llm.maxOutputTokensPlaceholder', 'e.g. 4096')} value={modelForm.max_output_tokens} onChange={e => patchModelForm({ max_output_tokens: e.target.value })} />
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.maxOutputTokensDesc', 'Limits generation length')}</div>
                                                 </div>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.requestTimeout', 'Request Timeout (s)')}</label>
-                                                    <input className="form-input" type="number" min="1" placeholder={t('enterprise.llm.requestTimeoutPlaceholder', 'e.g. 120 (Leave empty for default)')} value={modelForm.request_timeout} onChange={e => setModelForm({ ...modelForm, request_timeout: e.target.value })} />
+                                                    <input className="form-input" type="number" min="1" placeholder={t('enterprise.llm.requestTimeoutPlaceholder', 'e.g. 120 (Leave empty for default)')} value={modelForm.request_timeout} onChange={e => patchModelForm({ request_timeout: e.target.value })} />
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.requestTimeoutDesc', 'Increase for slow local models.')}</div>
                                                 </div>
                                                 <div className="form-group">
                                                     <label className="form-label">{t('enterprise.llm.temperature', 'Temperature')}</label>
-                                                    <input className="form-input" type="number" step="0.1" min="0" max="2" placeholder={t('enterprise.llm.temperaturePlaceholder', 'e.g. 0.7 or 1.0 (Leave empty for default)')} value={modelForm.temperature} onChange={e => setModelForm({ ...modelForm, temperature: e.target.value })} />
+                                                    <input className="form-input" type="number" step="0.1" min="0" max="2" placeholder={t('enterprise.llm.temperaturePlaceholder', 'e.g. 0.7 or 1.0 (Leave empty for default)')} value={modelForm.temperature} onChange={e => patchModelForm({ temperature: e.target.value })} />
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>{t('enterprise.llm.temperatureDesc', 'Leave empty to use the provider default. o1/o3 reasoning models usually require 1.0')}</div>
                                                 </div>
                                             </div>
+                                            <LLMProbeStatusCard status={probeUi} t={t} />
                                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                                <button className="btn btn-secondary" onClick={() => { setShowAddModel(false); setEditingModelId(null); }}>{t('common.cancel')}</button>
-                                                <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} disabled={!modelForm.model} onClick={async () => {
-                                                    const btn = document.activeElement as HTMLButtonElement;
-                                                    const origText = btn?.textContent || '';
-                                                    if (btn) btn.textContent = t('enterprise.llm.testing');
-                                                    try {
-                                                        const token = localStorage.getItem('token');
-                                                        const testData: any = { provider: modelForm.provider, model: modelForm.model, base_url: modelForm.base_url || undefined };
-                                                        if (modelForm.api_key) testData.api_key = modelForm.api_key;
-                                                        testData.model_id = editingModelId;
-                                                        const res = await fetch('/api/enterprise/llm-test', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                                            body: JSON.stringify(testData),
-                                                        });
-                                                        const result = await res.json();
-                                                        if (result.success) {
-                                                            if (btn) { btn.textContent = t('enterprise.llm.testSuccess', { latency: result.latency_ms }); btn.style.color = 'var(--success)'; }
-                                                            setTimeout(() => { if (btn) { btn.textContent = origText; btn.style.color = ''; } }, 3000);
-                                                        } else {
-                                                            alert(t('enterprise.llm.testFailed', { error: result.error || 'Unknown error', latency: result.latency_ms }));
-                                                            if (btn) btn.textContent = origText;
-                                                        }
-                                                    } catch (e: any) {
-                                                        alert(t('enterprise.llm.testError', { message: e.message }));
-                                                        if (btn) btn.textContent = origText;
-                                                    }
-                                                }}>{t('enterprise.llm.test')}</button>
+                                                <button className="btn btn-secondary" onClick={closeModelEditor}>{t('common.cancel')}</button>
+                                                <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} disabled={!canRunProbe || probeUi.status === 'testing'} onClick={runLlmProbe}>
+                                                    {probeUi.status === 'testing'
+                                                        ? t('enterprise.llm.testingAndAutofill', '\u6d4b\u8bd5\u4e2d\uff0c\u6b63\u5728\u8bc6\u522b\u63a5\u53e3...')
+                                                        : t('enterprise.llm.testAndAutofill', '\u6d4b\u8bd5\u5e76\u81ea\u52a8\u586b\u5199')}
+                                                </button>
                                                 <button className="btn btn-primary" onClick={() => {
                                                     const data = {
                                                         ...modelForm,
@@ -2187,7 +3588,7 @@ export default function EnterpriseSettings() {
                                                         temperature: modelForm.temperature !== '' ? Number(modelForm.temperature) : null
                                                     };
                                                     updateModel.mutate({ id: editingModelId!, data });
-                                                }} disabled={!modelForm.model}>
+                                                }} disabled={!canSaveModel}>
                                                     {t('common.save')}
                                                 </button>
                                             </div>
@@ -2199,7 +3600,7 @@ export default function EnterpriseSettings() {
                                                 <div style={{ fontWeight: 500 }}>{m.label}</div>
                                                 <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
                                                     {m.provider}/{m.model}
-                                                    {m.base_url && <span> · {m.base_url}</span>}
+                                                    {m.base_url && <span> / {m.base_url}</span>}
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -2231,10 +3632,8 @@ export default function EnterpriseSettings() {
                                                 </button>
                                                 {m.supports_vision && <span className="badge" style={{ background: 'rgba(99,102,241,0.15)', color: 'rgb(99,102,241)', fontSize: '10px' }}>Vision</span>}
                                                 <button className="btn btn-ghost" onClick={() => {
-                                                    setEditingModelId(m.id);
-                                                    setModelForm({ provider: m.provider, model: m.model, label: m.label, base_url: m.base_url || '', api_key: m.api_key_masked || '', supports_vision: m.supports_vision || false, max_output_tokens: m.max_output_tokens ? String(m.max_output_tokens) : '', request_timeout: m.request_timeout ? String(m.request_timeout) : '', temperature: m.temperature !== null && m.temperature !== undefined ? String(m.temperature) : '' });
-                                                    setShowAddModel(true);
-                                                }} style={{ fontSize: '12px' }}>✏️ {t('enterprise.tools.edit')}</button>
+                                                    openEditModelEditor(m);
+                                                }} style={{ fontSize: '12px' }}>{t('enterprise.tools.edit')}</button>
                                                 <button className="btn btn-ghost" onClick={() => deleteModel.mutate({ id: m.id })} style={{ color: 'var(--error)' }}>{t('common.delete')}</button>
                                             </div>
                                         </div>
@@ -2246,10 +3645,10 @@ export default function EnterpriseSettings() {
                     </div>
                 )}
 
-                {/* ── Org Structure ── */}
+                {/* 鈹€鈹€ Org Structure 鈹€鈹€ */}
                 {activeTab === 'org' && <OrgTab tenant={currentTenant} />}
 
-                {/* ── Approvals ── */}
+                {/* 鈹€鈹€ Approvals 鈹€鈹€ */}
                 {activeTab === 'approvals' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {approvals.map((a: any) => (
@@ -2257,7 +3656,7 @@ export default function EnterpriseSettings() {
                                 <div>
                                     <div style={{ fontWeight: 500 }}>{a.action_type}</div>
                                     <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                                        {a.agent_name || `Agent ${a.agent_id.slice(0, 8)}`} · {new Date(a.created_at).toLocaleString()}
+                                        {a.agent_name || `Agent ${a.agent_id.slice(0, 8)}`} / {new Date(a.created_at).toLocaleString()}
                                     </div>
                                 </div>
                                 {a.status === 'pending' ? (
@@ -2276,7 +3675,7 @@ export default function EnterpriseSettings() {
                     </div>
                 )}
 
-                {/* ── Audit Logs ── */}
+                {/* 鈹€鈹€ Audit Logs 鈹€鈹€ */}
                 {activeTab === 'audit' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {/* Sub-filter pills */}
@@ -2315,7 +3714,7 @@ export default function EnterpriseSettings() {
                                             padding: '1px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 500,
                                             background: isBg ? 'rgba(99,102,241,0.12)' : 'rgba(34,197,94,0.12)',
                                             color: isBg ? 'var(--accent-color)' : 'rgb(34,197,94)',
-                                        }}>{isBg ? '⚙️' : '👤'}</span>
+                                        }}>{isBg ? t('enterprise.audit.filterBackground') : t('enterprise.audit.filterActions')}</span>
                                         <span style={{ flex: 1, fontWeight: 500 }}>{log.action}</span>
                                         <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>{log.agent_id?.slice(0, 8) || '-'}</span>
                                     </div>
@@ -2333,18 +3732,18 @@ export default function EnterpriseSettings() {
                     </div>
                 )}
 
-                {/* ── Company Management ── */}
+                {/* 鈹€鈹€ Company Management 鈹€鈹€ */}
                 {activeTab === 'info' && (
                     <div>
 
-                        {/* ── 0. Company Name ── */}
+                        {/* 鈹€鈹€ 0. Company Name 鈹€鈹€ */}
                         <h3 style={{ marginBottom: '8px' }}>{t('enterprise.companyName.title', 'Company Name')}</h3>
                         <CompanyNameEditor key={`name-${selectedTenantId}`} />
 
-                        {/* ── 0.5. Company Timezone ── */}
+                        {/* 鈹€鈹€ 0.5. Company Timezone 鈹€鈹€ */}
                         <CompanyTimezoneEditor key={`tz-${selectedTenantId}`} />
 
-                        {/* ── 2. Company Intro ── */}
+                        {/* 鈹€鈹€ 2. Company Intro 鈹€鈹€ */}
                         <h3 style={{ marginBottom: '8px' }}>{t('enterprise.companyIntro.title', 'Company Intro')}</h3>
                         <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
                             {t('enterprise.companyIntro.description', 'Describe your company\'s mission, products, and culture. This information is included in every agent conversation as context.')}
@@ -2365,14 +3764,14 @@ export default function EnterpriseSettings() {
                                 <button className="btn btn-primary" onClick={saveCompanyIntro} disabled={companyIntroSaving}>
                                     {companyIntroSaving ? t('common.loading') : t('common.save', 'Save')}
                                 </button>
-                                {companyIntroSaved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>✅ {t('enterprise.config.saved', 'Saved')}</span>}
+                                {companyIntroSaved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>{t('enterprise.config.saved', 'Saved')}</span>}
                                 <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-                                    💡 {t('enterprise.companyIntro.hint', 'This content appears in every agent\'s system prompt')}
+                                    {'\u63d0\u793a\uff1a'}{t('enterprise.companyIntro.hint', 'This content appears in every agent\'s system prompt')}
                                 </span>
                             </div>
                         </div>
 
-                        {/* ── 2. Company Knowledge Base ── */}
+                        {/* 鈹€鈹€ 2. Company Knowledge Base 鈹€鈹€ */}
                         <h3 style={{ marginBottom: '8px' }}>{t('enterprise.kb.title')}</h3>
                         <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
                             {t('enterprise.kb.description', 'Shared files accessible to all agents via enterprise_info/ directory.')}
@@ -2383,13 +3782,13 @@ export default function EnterpriseSettings() {
 
 
 
-                        {/* ── Theme Color ── */}
+                        {/* 鈹€鈹€ Theme Color 鈹€鈹€ */}
                         <ThemeColorPicker />
 
-                        {/* ── Broadcast ── */}
+                        {/* 鈹€鈹€ Broadcast 鈹€鈹€ */}
                         <BroadcastSection />
 
-                        {/* ── Danger Zone: Delete Company ── */}
+                        {/* 鈹€鈹€ Danger Zone: Delete Company 鈹€鈹€ */}
                         <div style={{ marginTop: '32px', padding: '16px', border: '1px solid var(--status-error, #e53e3e)', borderRadius: '8px' }}>
                             <h3 style={{ marginBottom: '4px', color: 'var(--status-error, #e53e3e)' }}>{t('enterprise.dangerZone', 'Danger Zone')}</h3>
                             <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '12px' }}>
@@ -2424,7 +3823,7 @@ export default function EnterpriseSettings() {
                     </div>
                 )}
 
-                {/* ── Quotas Tab ── */}
+                {/* 鈹€鈹€ Quotas Tab 鈹€鈹€ */}
                 {activeTab === 'quotas' && (
                     <div>
                         <h3 style={{ marginBottom: '4px' }}>{t('enterprise.quotas.defaultUserQuotas')}</h3>
@@ -2432,7 +3831,7 @@ export default function EnterpriseSettings() {
                             {t('enterprise.quotas.defaultsApply')}
                         </p>
                         <div className="card" style={{ padding: '16px' }}>
-                            {/* ── Conversation Limits ── */}
+                            {/* 鈹€鈹€ Conversation Limits 鈹€鈹€ */}
                             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '10px' }}>{t('enterprise.quotas.conversationLimits')}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                 <div className="form-group">
@@ -2453,7 +3852,7 @@ export default function EnterpriseSettings() {
                                 </div>
                             </div>
 
-                            {/* ── Agent Limits ── */}
+                            {/* 鈹€鈹€ Agent Limits 鈹€鈹€ */}
                             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '10px' }}>{t('enterprise.quotas.agentLimits')}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                 <div className="form-group">
@@ -2476,7 +3875,7 @@ export default function EnterpriseSettings() {
                                 </div>
                             </div>
 
-                            {/* ── System Limits ── */}
+                            {/* 鈹€鈹€ System Limits 鈹€鈹€ */}
                             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '10px' }}>{t('enterprise.quotas.system')}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                                 <div className="form-group">
@@ -2487,7 +3886,7 @@ export default function EnterpriseSettings() {
                                 </div>
                             </div>
 
-                            {/* ── Trigger Limits ── */}
+                            {/* 鈹€鈹€ Trigger Limits 鈹€鈹€ */}
                             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '10px' }}>{t('enterprise.quotas.triggerLimits')}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                                 <div className="form-group">
@@ -2519,19 +3918,19 @@ export default function EnterpriseSettings() {
                                 <button className="btn btn-primary" onClick={saveQuotas} disabled={quotaSaving}>
                                     {quotaSaving ? t('common.loading') : t('common.save', 'Save')}
                                 </button>
-                                {quotaSaved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>✅ Saved</span>}
+                                {quotaSaved && <span style={{ color: 'var(--success)', fontSize: '12px' }}>{t('enterprise.config.saved', 'Saved')}</span>}
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* ── Users Tab ── */}
+                {/* 鈹€鈹€ Users Tab 鈹€鈹€ */}
                 {activeTab === 'users' && (
                     <UserManagement key={selectedTenantId} />
                 )}
 
 
-                {/* ── Tools Tab ── */}
+                {/* 鈹€鈹€ Tools Tab 鈹€鈹€ */}
                 {activeTab === 'tools' && (
                     <div>
                         {/* Sub-tab pills */}
@@ -2557,12 +3956,12 @@ export default function EnterpriseSettings() {
                                             <div key={row.agent_tool_id} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px' }}>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{ fontWeight: 500, fontSize: '13px' }}>🔌 {row.tool_display_name}</span>
+                                                        <span style={{ fontWeight: 500, fontSize: '13px' }}>{row.tool_display_name}</span>
                                                         {row.mcp_server_name && <span style={{ fontSize: '10px', background: 'var(--primary)', color: '#fff', borderRadius: '4px', padding: '1px 5px' }}>MCP</span>}
                                                     </div>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                                        🤖 {row.installed_by_agent_name || 'Unknown Agent'}
-                                                        {row.installed_at && <span> · {new Date(row.installed_at).toLocaleString()}</span>}
+                                                        {isChineseUi ? '\u5b89\u88c5\u6765\u6e90\uff1a' : 'Installed by '}{row.installed_by_agent_name || (isChineseUi ? '\u672a\u77e5 Agent' : 'Unknown Agent')}
+                                                        {row.installed_at && <span> / {new Date(row.installed_at).toLocaleString()}</span>}
                                                     </div>
                                                 </div>
                                                 <button className="btn btn-ghost" style={{ color: 'var(--error)', fontSize: '12px' }} onClick={async () => {
@@ -2570,10 +3969,10 @@ export default function EnterpriseSettings() {
                                                     try {
                                                         await fetchJson(`/tools/agent-tool/${row.agent_tool_id}`, { method: 'DELETE' });
                                                     } catch {
-                                                        // Already deleted (e.g. removed via Global Tools) — just refresh
+                                                        // Already deleted (e.g. removed via Global Tools) 鈥?just refresh
                                                     }
                                                     loadAgentInstalledTools();
-                                                }}>🗑️ {t('enterprise.tools.delete')}</button>
+                                                }}>{t('enterprise.tools.delete')}</button>
                                             </div>
                                         ))}
                                     </div>
@@ -2608,7 +4007,7 @@ export default function EnterpriseSettings() {
                                                         setMcpForm(p => ({ ...p, server_name: name, server_url: url }));
                                                     }
                                                 } catch {
-                                                    // Not JSON — treat as plain URL
+                                                    // Not JSON 鈥?treat as plain URL
                                                     setMcpForm(p => ({ ...p, server_url: val }));
                                                 }
                                             }} placeholder={'{\n  "mcpServers": {\n    "server-name": {\n      "type": "sse",\n      "url": "https://mcp.example.com/sse"\n    }\n  }\n}\n\nor paste a URL directly'} style={{ minHeight: '120px', fontFamily: 'var(--font-mono)', fontSize: '12px', resize: 'vertical' }} />
@@ -2626,7 +4025,7 @@ export default function EnterpriseSettings() {
                                             </div>
                                         )}
 
-                                        {/* Optional standalone API Key — sent as Authorization: Bearer */}
+                                        {/* Optional standalone API Key 鈥?sent as Authorization: Bearer */}
                                         <div>
                                             <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px' }}>
                                                 API Key <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
@@ -2681,7 +4080,7 @@ export default function EnterpriseSettings() {
                                                                                 description: tool.description || '',
                                                                                 type: 'mcp',
                                                                                 category: 'custom',
-                                                                                icon: '·',
+                                                                                icon: 'M',
                                                                                 mcp_server_url: mcpForm.server_url,
                                                                                 mcp_server_name: serverName,
                                                                                 mcp_tool_name: tool.name,
@@ -2716,7 +4115,7 @@ export default function EnterpriseSettings() {
                                                                                 description: tool.description || '',
                                                                                 type: 'mcp',
                                                                                 category: 'custom',
-                                                                                icon: '·',
+                                                                                icon: 'M',
                                                                                 mcp_server_url: mcpForm.server_url,
                                                                                 mcp_server_name: serverName,
                                                                                 mcp_tool_name: tool.name,
@@ -2751,7 +4150,7 @@ export default function EnterpriseSettings() {
                                 </div>
                             )}
 
-                            {/* ─── Category-grouped tool list ─── */}
+                            {/* 鈹€鈹€鈹€ Category-grouped tool list 鈹€鈹€鈹€ */}
                             {(() => {
                                 // Group tools by category (same pattern as AgentDetail.tsx)
                                 const grouped = allTools.reduce((acc: Record<string, any[]>, tool: any) => {
@@ -2836,7 +4235,7 @@ export default function EnterpriseSettings() {
                                                                         {(serverTools as any[]).map((tool: any, toolIdx: number) => (
                                                                             <div key={tool.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: toolIdx < serverTools.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
                                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                                                                    <span style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>·</span>
+                                                                                    <span style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>M</span>
                                                                                     <div style={{ minWidth: 0 }}>
                                                                                         <div style={{ fontWeight: 500, fontSize: '13px' }}>{tool.display_name}</div>
                                                                                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool.description?.slice(0, 90)}</div>
@@ -2922,7 +4321,7 @@ export default function EnterpriseSettings() {
                                                                         setConfigCategory(category);
                                                                         setEditingConfig({});
                                                                         // Load existing global config from the first tool in this category that has a non-empty config.
-                                                                        // Do NOT require config_schema — some categories (e.g. AgentBay)
+                                                                        // Do NOT require config_schema 鈥?some categories (e.g. AgentBay)
                                                                         // define their schema only in frontend CATEGORY_CONFIG_SCHEMAS.
                                                                         const firstToolWithConfig = (catTools as any[]).find((tl: any) => tl.config && Object.keys(tl.config).length > 0);
                                                                         if (firstToolWithConfig?.config) {
@@ -2932,7 +4331,7 @@ export default function EnterpriseSettings() {
                                                                     style={{ background: 'none', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)' }}
                                                                     title={`Configure ${category}`}
                                                                 >
-                                                                    ⚙️ {t('enterprise.tools.configure', 'Configure')}
+                                                                    {t('enterprise.tools.configure', 'Configure')}
                                                                 </button>
                                                             )}
                                                             {/* Category Bulk Toggle */}
@@ -2982,7 +4381,7 @@ export default function EnterpriseSettings() {
                                                                                 </div>
                                                                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                                     {tool.description?.slice(0, 80)}
-                                                                                    {tool.mcp_server_name && <span> · {tool.mcp_server_name}</span>}
+                                                                                    {tool.mcp_server_name && <span> / {tool.mcp_server_name}</span>}
                                                                                 </div>
                                                                             </div>
                                                                         </div>
@@ -3007,7 +4406,7 @@ export default function EnterpriseSettings() {
                                                                                         setEditingConfig(cfg);
                                                                                     }}
                                                                                 >
-                                                                                    ⚙️ {t('enterprise.tools.configure')}
+                                                                                    {t('enterprise.tools.configure')}
                                                                                 </button>
                                                                             )}
 
@@ -3047,7 +4446,7 @@ export default function EnterpriseSettings() {
                                 );
                             })()}
 
-                            {/* ─── Edit MCP Server Modal ─── */}
+                            {/* 鈹€鈹€鈹€ Edit MCP Server Modal 鈹€鈹€鈹€ */}
                             {editingMcpServer && (
                                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                     onClick={e => { if (e.target === e.currentTarget) setEditingMcpServer(null); }}>
@@ -3090,7 +4489,7 @@ export default function EnterpriseSettings() {
                                             <div style={{ padding: '10px 12px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: '6px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.65' }}>
                                                 <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>How authentication works</div>
                                                 <div>- <strong>URL-embedded key</strong> (e.g. Tavily <code style={{ background: 'rgba(0,0,0,0.06)', padding: '0 3px', borderRadius: '3px' }}>?tavilyApiKey=xxx</code>): include in Server URL above, leave API Key blank.</div>
-                                                <div>- <strong>Bearer token</strong> auth: enter in the API Key field. It is injected as an HTTP header on every request — the URL stays clean.</div>
+                                                <div>- <strong>Bearer token</strong> auth: enter in the API Key field. It is injected as an HTTP header on every request, so the URL stays clean.</div>
                                                 <div>- If both are present, the API Key field takes priority over any URL-embedded value.</div>
                                             </div>
                                         </div>
@@ -3132,10 +4531,10 @@ export default function EnterpriseSettings() {
                                         <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-primary)', borderRadius: '12px', padding: '24px', width: '480px', maxWidth: '95vw', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                                 <div>
-                                                    <h3 style={{ margin: 0 }}>⚙️ {tool.display_name}</h3>
+                                                    <h3 style={{ margin: 0 }}>Tool Config: {tool.display_name}</h3>
                                                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Global configuration used by all agents</div>
                                                 </div>
-                                                <button onClick={() => setEditingToolId(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)' }}>✕</button>
+                                                <button onClick={() => setEditingToolId(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: 'var(--text-secondary)' }}>{'\u5173\u95ed'}</button>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                                 {(tool.config_schema.fields || []).map((field: any) => {
@@ -3264,10 +4663,10 @@ export default function EnterpriseSettings() {
                     </div>
                 )}
 
-                {/* ── Skills Tab ── */}
+                {/* 鈹€鈹€ Skills Tab 鈹€鈹€ */}
                 {activeTab === 'skills' && <SkillsTab />}
 
-                {/* ── Invitation Codes Tab ── */}
+                {/* 鈹€鈹€ Invitation Codes Tab 鈹€鈹€ */}
                 {activeTab === 'invites' && <InvitationCodes />}
             </div>
 

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
 from app.models.agent import Agent
 from app.models.llm import LLMModel
 
@@ -154,7 +155,10 @@ class AgentManager:
 
         if model and model.api_key_encrypted:
             config["env"] = {
-                f"{model.provider.upper()}_API_KEY": model.api_key_encrypted,
+                f"{model.provider.upper()}_API_KEY": decrypt_data_or_return_plaintext(
+                    model.api_key_encrypted,
+                    settings.SECRET_KEY,
+                ),
             }
 
         return config

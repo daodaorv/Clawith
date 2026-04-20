@@ -96,6 +96,33 @@ def decrypt_data(ciphertext: str, key: str) -> str:
         raise ValueError(f"Decryption failed: {e}") from e
 
 
+def decrypt_data_or_return_plaintext(ciphertext: str | None, key: str) -> str:
+    """Return decrypted plaintext when possible, otherwise fall back to the original value.
+
+    This keeps runtime compatibility with legacy rows that still store sensitive
+    values in plaintext while newer rows are encrypted at rest.
+    """
+    if not ciphertext:
+        return ""
+
+    try:
+        return decrypt_data(ciphertext, key)
+    except Exception:
+        return ciphertext
+
+
+def encrypt_data_if_needed(plaintext: str | None, key: str) -> str:
+    """Encrypt plaintext unless it already looks like an encrypted payload."""
+    if not plaintext:
+        return ""
+
+    try:
+        decrypt_data(plaintext, key)
+        return plaintext
+    except Exception:
+        return encrypt_data(plaintext, key)
+
+
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

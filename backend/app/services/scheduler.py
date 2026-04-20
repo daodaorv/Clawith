@@ -12,7 +12,12 @@ from datetime import datetime, timezone
 
 from croniter import croniter
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select
+
+from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
+
+settings = get_settings()
 
 
 def compute_next_run(cron_expr: str, after: datetime | None = None) -> datetime | None:
@@ -80,7 +85,7 @@ async def _execute_schedule(schedule_id: uuid.UUID, agent_id: uuid.UUID, instruc
             try:
                 client = create_llm_client(
                     provider=model.provider,
-                    api_key=model.api_key_encrypted,
+                    api_key=decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY),
                     model=model.model,
                     base_url=model.base_url,
                     timeout=float(getattr(model, 'request_timeout', None) or 120.0),
@@ -190,7 +195,7 @@ async def _tick():
         async with async_session() as db:
             result = await db.execute(
                 select(AgentSchedule).where(
-                    AgentSchedule.is_enabled == True,
+                    AgentSchedule.is_enabled,
                     AgentSchedule.next_run_at <= now,
                 )
             )

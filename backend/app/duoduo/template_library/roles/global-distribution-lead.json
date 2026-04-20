@@ -1,0 +1,35 @@
+{
+  "template_key": "global-distribution-lead",
+  "canonical_name": "Global Distribution Lead",
+  "display_name_zh": "海外分发负责人",
+  "role_level": "lead",
+  "role_type": "distribution",
+  "primary_goal": "针对不同海外渠道输出分发版本、节奏与复盘建议。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "business_stage": [
+    "0-1",
+    "1-10"
+  ],
+  "recommended_model_family": [
+    "deepseek",
+    "qwen"
+  ],
+  "default_autonomy_level": "L2",
+  "default_boundaries": [
+    "不直接代替人工执行外部平台发布"
+  ],
+  "recommended_skill_packs": [
+    "content-production-pack",
+    "global-distribution-pack"
+  ],
+  "coordination_pattern_ids": [
+    "content-production-pipeline"
+  ],
+  "source_ids": [
+    "contains-studio-agents",
+    "crewai"
+  ],
+  "validation_status": "internal-preview"
+}

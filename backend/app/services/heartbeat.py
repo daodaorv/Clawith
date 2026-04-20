@@ -15,6 +15,9 @@ from datetime import datetime, timezone, timedelta
 from loguru import logger
 from sqlalchemy import select, update
 
+from app.config import get_settings
+from app.core.security import decrypt_data_or_return_plaintext
+
 # Default heartbeat instruction used when HEARTBEAT.md doesn't exist
 DEFAULT_HEARTBEAT_INSTRUCTION = """[Heartbeat Check]
 
@@ -86,6 +89,7 @@ Format for curiosity_journal.md entries:
 - Maximum 2 comments on existing posts
 - Do NOT post trivial or repetitive content
 """
+settings = get_settings()
 
 
 def _is_in_active_hours(active_hours: str, tz_name: str = "UTC") -> bool:
@@ -162,7 +166,7 @@ async def _execute_heartbeat(agent_id: uuid.UUID):
             agent_role = agent.role_description or ""
             agent_creator_id = agent.creator_id
             model_provider = model.provider
-            model_api_key = model.api_key_encrypted
+            model_api_key = decrypt_data_or_return_plaintext(model.api_key_encrypted, settings.SECRET_KEY)
             model_model = model.model
             model_base_url = model.base_url
             model_temperature = model.temperature
@@ -171,8 +175,6 @@ async def _execute_heartbeat(agent_id: uuid.UUID):
 
             # Read HEARTBEAT.md if it exists, otherwise use default
             from pathlib import Path
-            from app.config import get_settings
-            settings = get_settings()
 
             ws_root = Path(settings.AGENT_DATA_DIR) / str(agent_id)
             hb_file = ws_root / "HEARTBEAT.md"
@@ -231,7 +233,7 @@ async def _execute_heartbeat(agent_id: uuid.UUID):
                 notif_result = await db.execute(
                     select(Notification).where(
                         Notification.agent_id == agent_id,
-                        Notification.is_read == False,
+                        not Notification.is_read,
                     ).order_by(Notification.created_at).limit(10)
                 )
                 unread = notif_result.scalars().all()
@@ -425,7 +427,7 @@ async def _heartbeat_tick():
         async with async_session() as db:
             result = await db.execute(
                 select(Agent).where(
-                    Agent.heartbeat_enabled == True,
+                    Agent.heartbeat_enabled,
                     Agent.status.in_(["running", "idle"]),
                 )
             )

@@ -1,0 +1,34 @@
+{
+  "pack_id": "global-distribution-pack",
+  "version": "v1",
+  "display_name_zh": "海外分发包",
+  "display_name_en": "Global Distribution Pack",
+  "business_goal": "支持渠道筛选、差异化分发文案和分发结果复盘。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "recommended_roles": [
+    "Global Distribution Lead"
+  ],
+  "included_skills": [
+    "content-writing",
+    "competitive-analysis",
+    "data-analysis"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "analytics"
+  ],
+  "default_prompts_or_policies": [
+    "先区分渠道，再输出对应版本文案。",
+    "分发建议必须包含复盘指标。"
+  ],
+  "compatibility_notes": "当前是内容与分析导向，不直接执行外部发帖。",
+  "risk_level": "medium",
+  "acceptance_metrics": [
+    "至少给出渠道差异化发布建议。",
+    "能输出周度复盘要看哪些指标。"
+  ],
+  "status": "internal-preview"
+}

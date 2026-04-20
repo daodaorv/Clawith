@@ -10,7 +10,7 @@ from starlette.background import BackgroundTasks
 from app.api import auth as auth_api
 from app.api.notification import BroadcastRequest, broadcast_notification
 from app.core.security import verify_password
-from app.models.user import User
+from app.models.user import Identity, User
 from app.schemas.schemas import ForgotPasswordRequest, ResetPasswordRequest
 from app.services import password_reset_service, system_email_service
 
@@ -53,16 +53,29 @@ class MockRedis:
         self._data[key] = value
 
     def pipeline(self, transaction=True):
-        return self
+        outer = self
 
-    async def __aenter__(self):
-        return self
+        class _Pipeline:
+            async def __aenter__(self):
+                return self
 
-    async def __aexit__(self, *_):
-        pass
+            async def __aexit__(self, *_):
+                return False
 
-    async def execute(self):
-        pass
+            def delete(self, key):
+                outer.deleted.append(key)
+                outer._data.pop(key, None)
+                return self
+
+            def setex(self, key, ttl, value):
+                outer.setex_calls.append((key, ttl, value))
+                outer._data[key] = value
+                return self
+
+            async def execute(self):
+                return None
+
+        return _Pipeline()
 
 
 class RecordingDB:
@@ -101,7 +114,15 @@ def make_user(**overrides):
         "is_active": True,
     }
     values.update(overrides)
-    return User(**values)
+    identity = Identity(
+        id=uuid.uuid4(),
+        username=values.pop("username", None),
+        email=values.pop("email", None),
+        password_hash=values.pop("password_hash", None),
+        is_active=values.get("is_active", True),
+        email_verified=values.pop("email_verified", False),
+    )
+    return User(identity=identity, **values)
 
 
 @pytest.mark.asyncio
@@ -111,12 +132,10 @@ async def test_create_password_reset_token_invalidates_older_tokens(monkeypatch)
         "get_settings",
         lambda: SimpleNamespace(PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=15, PUBLIC_BASE_URL=""),
     )
-    mock_redis = MockRedis(initial_data={"pwd_reset:user:user-id-123": "old-token-hash"})
+    user_id = uuid.uuid4()
+    mock_redis = MockRedis(initial_data={f"pwd_reset:user:{user_id}": "old-token-hash"})
     async def fake_get_redis(): return mock_redis
     monkeypatch.setattr(password_reset_service, "get_redis", fake_get_redis)
-
-    db = RecordingDB()
-    user_id = uuid.uuid4()
 
     raw_token, expires_at = await password_reset_service.create_password_reset_token(user_id)
 
@@ -132,11 +151,10 @@ async def test_create_password_reset_token_invalidates_older_tokens(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_build_password_reset_url_uses_env_public_base_url(monkeypatch):
-    monkeypatch.setattr(
-        password_reset_service,
-        "get_settings",
-        lambda: SimpleNamespace(PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30, PUBLIC_BASE_URL="https://app.example.com/"),
-    )
+    async def fake_get_public_base_url(_db):
+        return "https://app.example.com"
+
+    monkeypatch.setattr(password_reset_service, "get_public_base_url", fake_get_public_base_url)
     db = RecordingDB([DummyResult(None)])
 
     url = await password_reset_service.build_password_reset_url(db, "abc123")
@@ -158,20 +176,27 @@ async def test_consume_password_reset_token_works_correctly(monkeypatch):
     async def fake_get_redis(): return mock_redis
     monkeypatch.setattr(password_reset_service, "get_redis", fake_get_redis)
 
-    db = RecordingDB()
     result = await password_reset_service.consume_password_reset_token(raw_token)
 
     assert result is not None
-    assert result["user_id"] == user_id
+    assert result["identity_id"] == user_id
     # Should be deleted after consumption
     assert f"pwd_reset:token:{token_hash}" in mock_redis.deleted
     assert f"pwd_reset:user:{user_id}" in mock_redis.deleted
 
 
 @pytest.mark.asyncio
-async def test_forgot_password_returns_generic_response_for_unknown_email():
+async def test_forgot_password_returns_generic_response_for_unknown_email(monkeypatch):
     db = RecordingDB([DummyResult(None)])
     background_tasks = BackgroundTasks()
+
+    async def fake_resolve_email_config_async(_db):
+        return object()
+
+    monkeypatch.setattr(
+        "app.services.system_email_service.resolve_email_config_async",
+        fake_resolve_email_config_async,
+    )
 
     response = await auth_api.forgot_password(
         ForgotPasswordRequest(email="missing@example.com"),
@@ -192,8 +217,11 @@ async def test_forgot_password_returns_generic_response_for_unknown_email():
 @pytest.mark.asyncio
 async def test_forgot_password_queues_background_email(monkeypatch):
     user = make_user()
-    db = RecordingDB([DummyResult(user)])
+    db = RecordingDB([DummyResult(user.identity)])
     background_tasks = BackgroundTasks()
+
+    async def fake_resolve_email_config_async(_db):
+        return object()
 
     async def fake_create_password_reset_token(*_args, **_kwargs):
         return "raw-token", datetime.now(timezone.utc) + timedelta(minutes=30)
@@ -203,12 +231,15 @@ async def test_forgot_password_queues_background_email(monkeypatch):
 
     monkeypatch.setattr(password_reset_service, "create_password_reset_token", fake_create_password_reset_token)
     monkeypatch.setattr(password_reset_service, "build_password_reset_url", fake_build_password_reset_url)
+    monkeypatch.setattr(
+        "app.services.system_email_service.resolve_email_config_async",
+        fake_resolve_email_config_async,
+    )
 
 
     response = await auth_api.forgot_password(ForgotPasswordRequest(email=user.email), background_tasks, db)
 
     assert response["ok"] is True
-    assert db.committed is True
     assert len(background_tasks.tasks) == 1
 
 
@@ -261,10 +292,10 @@ def test_send_system_email_uses_configured_timeout(monkeypatch):
 @pytest.mark.asyncio
 async def test_reset_password_updates_user(monkeypatch):
     user = make_user(password_hash=auth_api.hash_password("old-password"))
-    db = RecordingDB([DummyResult(user)])
+    db = RecordingDB([DummyResult(user.identity)])
 
     async def fake_consume_password_reset_token(*_args, **_kwargs):
-        return {"user_id": user.id}
+        return {"identity_id": user.identity.id}
 
     monkeypatch.setattr(password_reset_service, "consume_password_reset_token", fake_consume_password_reset_token)
 
@@ -274,7 +305,7 @@ async def test_reset_password_updates_user(monkeypatch):
     )
 
     assert response == {"ok": True}
-    assert verify_password("new-password", user.password_hash)
+    assert verify_password("new-password", user.identity.password_hash)
     assert db.flushed is True
 
 

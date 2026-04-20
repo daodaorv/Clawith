@@ -1,0 +1,34 @@
+{
+  "pack_id": "report-output-pack",
+  "version": "v1",
+  "display_name_zh": "报告输出包",
+  "display_name_en": "Report Output Pack",
+  "business_goal": "把分散分析结果整理成对管理层可读的中文报告。",
+  "applicable_scenarios": [
+    "cn-team-global-content-knowledge"
+  ],
+  "recommended_roles": [
+    "Founder Copilot",
+    "Project Chief of Staff"
+  ],
+  "included_skills": [
+    "data-analysis",
+    "content-writing"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "spreadsheet"
+  ],
+  "default_prompts_or_policies": [
+    "先结论后细节。",
+    "所有报告默认中文标题、中文摘要、中文行动建议。"
+  ],
+  "compatibility_notes": "适合周报、复盘和汇报稿，不替代最终业务审批。",
+  "risk_level": "low",
+  "acceptance_metrics": [
+    "能把原始数据整理成结论清晰的中文报告。",
+    "能明确下一步行动建议。"
+  ],
+  "status": "internal-preview"
+}
