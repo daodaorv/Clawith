@@ -31,3 +31,11 @@ _agents/
 
 # Internal docs
 docs/
+
+# Local agent/runtime artifacts
+.omx/
+.playwright-cli/
+output/
+backend/.pip-cache/
+backend/.pydeps/
+backend/.tmp/
