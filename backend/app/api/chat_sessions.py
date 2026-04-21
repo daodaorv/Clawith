@@ -5,7 +5,7 @@ from datetime import datetime, timezone as tz
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,8 @@ def _can_view_all_agent_chat_sessions(user: User) -> bool:
 
 
 class SessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     agent_id: str
     user_id: str
@@ -49,9 +51,6 @@ class SessionOut(BaseModel):
     # Group chat session fields
     is_group: bool = False
     group_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class CreateSessionIn(BaseModel):

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import get_settings
 from app.core.events import get_redis
+from app.core.redis_pipeline import run_pipeline_commands
 
 # Key prefixes for Redis
 TOKEN_PREFIX = "email_verify:token:"
@@ -51,9 +52,13 @@ class EmailVerificationService:
         token_data = json.dumps({"identity_id": str(identity_id), "email": email})
 
         async with redis.pipeline(transaction=True) as pipe:
-            pipe.setex(token_key, ttl_seconds, token_data)
-            pipe.setex(user_key, ttl_seconds, code_hash)
-            await pipe.execute()
+            await run_pipeline_commands(
+                pipe,
+                [
+                    ("setex", (token_key, ttl_seconds, token_data)),
+                    ("setex", (user_key, ttl_seconds, code_hash)),
+                ],
+            )
 
         return raw_code, expires_at
 
@@ -85,9 +90,13 @@ class EmailVerificationService:
 
         # Atomic delete to ensure single-use
         async with redis.pipeline(transaction=True) as pipe:
-            pipe.delete(token_key)
-            pipe.delete(user_key)
-            await pipe.execute()
+            await run_pipeline_commands(
+                pipe,
+                [
+                    ("delete", (token_key,)),
+                    ("delete", (user_key,)),
+                ],
+            )
 
         return {"identity_id": identity_id, "email": email}
 

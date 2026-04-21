@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import check_agent_access
 from app.core.security import get_current_user, get_current_admin
 from app.database import get_db
+from app.duoduo.template_library import get_template_library_catalog
 from app.models.agent import Agent, AgentTemplate
 from app.models.user import User
 from app.services.collaboration import collaboration_service
@@ -75,6 +76,12 @@ async def send_inter_agent_message(
 
 
 # ─── Template Market ────────────────────────────────────
+
+@router.get("/template-library/catalog")
+async def get_duoduo_template_library_catalog(scenario: str | None = None):
+    """Return the Duoduo template-library reference catalog."""
+    return get_template_library_catalog(scenario=scenario)
+
 
 class TemplateCreate(BaseModel):
     name: str
