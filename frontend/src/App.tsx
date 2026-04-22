@@ -18,6 +18,7 @@ import EnterpriseSettings from './pages/EnterpriseSettings';
 import InvitationCodes from './pages/InvitationCodes';
 import AdminCompanies from './pages/AdminCompanies';
 import SSOEntry from './pages/SSOEntry';
+import { shouldBootstrapAuthSession } from './utils/authBootstrap';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const token = useAuthStore((s) => s.token);
@@ -121,6 +122,8 @@ export default function App() {
         // Initialize theme on app mount (ensures login page gets correct theme)
         const savedTheme = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
+        const currentPathname = window.location.pathname;
+        const shouldBootstrapAuth = shouldBootstrapAuthSession(currentPathname);
 
         // Cross-domain tenant switch: the backend appends ?token=<jwt> to the redirect URL
         // so the new domain receives a fresh scoped token. Consume it here (before any other
@@ -129,7 +132,7 @@ export default function App() {
         const urlToken = urlParams.get('token');
         let effectiveToken = token;
 
-        if (urlToken) {
+        if (urlToken && shouldBootstrapAuth) {
             // Persist the new token and update the zustand store's in-memory value
             localStorage.setItem('token', urlToken);
             useAuthStore.setState({ token: urlToken, user: null });
@@ -145,7 +148,7 @@ export default function App() {
             window.history.replaceState({}, '', cleanUrl);
         }
 
-        if (effectiveToken && !user) {
+        if (shouldBootstrapAuth && effectiveToken && !user) {
             authApi.me()
                 .then((u) => setAuth(u, effectiveToken!))
                 .catch(() => useAuthStore.getState().logout())
