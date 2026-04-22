@@ -28,16 +28,25 @@ def configure_logging():
     # Remove default handler
     logger.remove()
 
-    # Add stdout handler with custom format and filter to ensure trace_id exists
-    logger.add(
-        sys.stdout,
-        level="INFO",
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[trace_id]:-<12}</cyan> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        enqueue=True,
-        backtrace=True,
-        diagnose=True,
-        filter=lambda record: (record["extra"].setdefault("trace_id", get_trace_id() or str(uuid4())) is not None)
-    )
+    handler_kwargs = {
+        "level": "INFO",
+        "format": "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[trace_id]:-<12}</cyan> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        "enqueue": True,
+        "backtrace": True,
+        "diagnose": True,
+        "filter": lambda record: (
+            record["extra"].setdefault("trace_id", get_trace_id() or str(uuid4())) is not None
+        ),
+    }
+
+    # Some Windows sandboxed environments cannot create the multiprocessing
+    # queue used by `enqueue=True`. Fall back to synchronous stdout logging so
+    # local development and tests can still boot the app.
+    try:
+        logger.add(sys.stdout, **handler_kwargs)
+    except (PermissionError, OSError):
+        handler_kwargs["enqueue"] = False
+        logger.add(sys.stdout, **handler_kwargs)
 
     return logger
 

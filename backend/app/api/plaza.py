@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, update, func, desc
 
 from app.api.auth import get_current_user
@@ -35,6 +35,8 @@ class CommentCreate(BaseModel):
 
 
 class PostOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     author_id: uuid.UUID
     author_type: str
@@ -44,11 +46,10 @@ class PostOut(BaseModel):
     comments_count: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class CommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     post_id: uuid.UUID
     author_id: uuid.UUID
@@ -56,9 +57,6 @@ class CommentOut(BaseModel):
     author_name: str
     content: str
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class PostDetail(PostOut):

@@ -3,9 +3,8 @@
 import os
 import re
 from fastapi import Request
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.system_settings import SystemSetting
+from app.config import get_settings
 
 class PlatformService:
     """Service to handle platform-wide settings and URL resolution."""
@@ -22,21 +21,26 @@ class PlatformService:
         """Resolve the platform's public base URL with priority lookup.
         
         Priority:
-        1. Environment variable (PUBLIC_BASE_URL) - from .env or docker
+        1. Settings / environment PUBLIC_BASE_URL
         2. Incoming request's base URL (browser address)
         3. Hardcoded fallback (https://try.clawith.ai)
         """
-        # 1. Try environment variable
+        # 1. Try settings first so app config and tests can override consistently.
+        settings_url = get_settings().PUBLIC_BASE_URL.strip()
+        if settings_url:
+            return settings_url.rstrip("/")
+
+        # 2. Fall back to raw environment for safety in partial init contexts.
         env_url = os.environ.get("PUBLIC_BASE_URL")
         if env_url:
             return env_url.rstrip("/")
 
-        # 2. Fallback to request (browser address)
+        # 3. Fallback to request (browser address)
         if request:
             # Note: request.base_url might include trailing slash
             return str(request.base_url).rstrip("/")
 
-        # 3. Absolute fallback
+        # 4. Absolute fallback
         return "https://try.clawith.ai"
 
 
