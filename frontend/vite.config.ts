@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
+import { resolveDevProxyTargets } from './vite.proxy'
 
 // Read version from local VERSION file first, fallback to root VERSION
 let majorVersion = '0.0.0'
@@ -16,6 +17,7 @@ for (const candidate of ['./VERSION', '../VERSION']) {
 const now = new Date()
 const buildTimestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
 const version = `${majorVersion}+${buildTimestamp}`
+const { apiTarget, wsTarget } = resolveDevProxyTargets(process.env)
 
 export default defineConfig({
     plugins: [react()],
@@ -32,11 +34,11 @@ export default defineConfig({
         host: '0.0.0.0',
         proxy: {
             '/api': {
-                target: 'http://localhost:8008',
+                target: apiTarget,
                 changeOrigin: true,
             },
             '/ws': {
-                target: 'ws://localhost:8008',
+                target: wsTarget,
                 ws: true,
             },
         },

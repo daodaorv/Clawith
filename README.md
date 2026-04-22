@@ -107,6 +107,15 @@ bash restart.sh
 # → Backend:  http://localhost:8008
 ```
 
+If you want to run the latest Vite frontend against a stable backend chain for manual UI / E2E verification, start the frontend with an explicit proxy target:
+
+```bash
+cd frontend
+VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --port 3010
+```
+
+This keeps the latest source frontend on `http://127.0.0.1:3010` while proxying `/api` and `/ws` through the already-running Docker web entrypoint on `3008`.
+
 ### Docker
 
 ```bash

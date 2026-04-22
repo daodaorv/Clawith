@@ -102,6 +102,15 @@ bash restart.sh
 # → 后端: http://localhost:8008
 ```
 
+如果你想在手工 UI / E2E 验证时使用最新源码前端，但后端链路想复用稳定的 Docker 入口，可以这样启动前端：
+
+```bash
+cd frontend
+VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --port 3010
+```
+
+这样最新源码前端会运行在 `http://127.0.0.1:3010`，而 `/api` 和 `/ws` 会继续通过 `3008` 上已经运行的 Docker Web 入口转发。
+
 ### Docker 部署
 
 ```bash
