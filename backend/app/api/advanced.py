@@ -11,7 +11,7 @@ from app.core.permissions import check_agent_access
 from app.core.security import get_current_user, get_current_admin
 from app.database import get_db
 from app.duoduo.template_library import get_template_library_catalog
-from app.models.agent import Agent, AgentTemplate
+from app.models.agent import AgentTemplate
 from app.models.user import User
 from app.services.collaboration import collaboration_service
 

@@ -8,6 +8,7 @@ prevent human-agent input collisions.
 Cookie export occurs automatically when the Take Control session ends.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -180,9 +181,6 @@ async def _get_client(agent_id: uuid.UUID, session_id: str):
 # interact directly with Chrome. Desktop sessions use the SDK's computer API.
 
 
-import asyncio
-
-
 def _is_browser_session(client) -> bool:
     """Check if the client's active session is a browser image."""
     return getattr(client, "_image_type", "") in ("browser", "browser_latest")
@@ -269,7 +267,6 @@ const {{ chromium }} = require('/usr/local/lib/node_modules/playwright');
 }})();
 """
         res = await _eval_cdp_script(client, script)
-        is_ok = getattr(res, "success", False) and getattr(res, "output", "") and "CLICK_OK" in getattr(res, "output", "")
         # Bubble up the exact Node error if it failed
         return {"success": res.get("success", False) and "CLICK_OK" in res.get("output", ""), "method": "cdp_click", "output": "Clicked manually" if res.get("success", False) else res.get("output", "Unknown error")}
 
@@ -336,15 +333,24 @@ async def _perform_press_keys(client, keys: list[str]):
         playwright_keys = []
         for k in keys:
             k_lower = k.lower()
-            if k_lower == 'ctrl': playwright_keys.append('Control')
-            elif k_lower == 'alt': playwright_keys.append('Alt')
-            elif k_lower == 'shift': playwright_keys.append('Shift')
-            elif k_lower == 'meta': playwright_keys.append('Meta')
-            elif k_lower == 'enter': playwright_keys.append('Enter')
-            elif k_lower == 'backspace': playwright_keys.append('Backspace')
-            elif k_lower == 'esc': playwright_keys.append('Escape')
-            elif k_lower == 'tab': playwright_keys.append('Tab')
-            else: playwright_keys.append(k.upper() if len(k) == 1 else k)
+            if k_lower == 'ctrl':
+                playwright_keys.append('Control')
+            elif k_lower == 'alt':
+                playwright_keys.append('Alt')
+            elif k_lower == 'shift':
+                playwright_keys.append('Shift')
+            elif k_lower == 'meta':
+                playwright_keys.append('Meta')
+            elif k_lower == 'enter':
+                playwright_keys.append('Enter')
+            elif k_lower == 'backspace':
+                playwright_keys.append('Backspace')
+            elif k_lower == 'esc':
+                playwright_keys.append('Escape')
+            elif k_lower == 'tab':
+                playwright_keys.append('Tab')
+            else:
+                playwright_keys.append(k.upper() if len(k) == 1 else k)
             
         combined = "+".join(playwright_keys)
         script = f"""
@@ -461,7 +467,6 @@ async def _perform_drag(
 
     # Desktop session — use Computer API move + click sequence
     try:
-        import math
         steps = 20
         for i in range(1, steps + 1):
             t = i / steps
