@@ -12,6 +12,8 @@ import Dashboard from './pages/Dashboard';
 import Plaza from './pages/Plaza';
 import AgentDetail from './pages/AgentDetail';
 import AgentCreate from './pages/AgentCreate';
+import FounderWorkspace from './pages/FounderWorkspace';
+import FounderCompanyDashboard from './pages/FounderCompanyDashboard';
 import Chat from './pages/Chat';
 import Messages from './pages/Messages';
 import EnterpriseSettings from './pages/EnterpriseSettings';
@@ -181,7 +183,10 @@ export default function App() {
                     <Route index element={<Navigate to="/plaza" replace />} />
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="plaza" element={<Plaza />} />
-                    <Route path="agents/new" element={<AgentCreate />} />
+                    <Route path="founder-workspace" element={<FounderWorkspace />} />
+                    <Route path="founder-workspace/dashboard" element={<FounderCompanyDashboard />} />
+                    <Route path="agents/new" element={<FounderWorkspace />} />
+                    <Route path="agents/new/manual" element={<AgentCreate />} />
                     <Route path="agents/:id" element={<AgentDetail />} />
                     <Route path="agents/:id/chat" element={<Chat />} />
                     <Route path="messages" element={<Messages />} />

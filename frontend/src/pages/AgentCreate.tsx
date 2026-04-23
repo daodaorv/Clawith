@@ -25,6 +25,13 @@ import {
     resolveFounderMainlineAgentCreateAutofill,
     resolveFounderMainlineAgentCreateGuard,
 } from '../services/founderMainlineDraftPlanSummary';
+import {
+    buildFounderProviderPresetCards,
+    clearFounderPreferredProvider,
+    loadFounderPreferredProvider,
+    requestFounderProviderSpecs,
+    saveFounderPreferredProvider,
+} from '../services/founderProviderPresets';
 import ChannelConfig from '../components/ChannelConfig';
 import LinearCopyButton from '../components/LinearCopyButton';
 const STEPS = ['basicInfo', 'personality', 'skills', 'permissions', 'channel'] as const;
@@ -110,6 +117,7 @@ export default function AgentCreate() {
     const [founderMainlineCorrectionNotes, setFounderMainlineCorrectionNotes] = useState('');
     const [founderMainlineUserConfirmed, setFounderMainlineUserConfirmed] = useState(false);
     const [founderMainlineRecommendationApplied, setFounderMainlineRecommendationApplied] = useState(false);
+    const [founderPreferredProvider, setFounderPreferredProvider] = useState<string | null>(() => loadFounderPreferredProvider());
 
     // Fetch LLM models for step 1
     const { data: models = [] } = useQuery({
@@ -135,6 +143,10 @@ export default function AgentCreate() {
     const { data: duoduoSkillPackCatalog } = useQuery({
         queryKey: ['duoduo-skill-packs', 'agent-create'],
         queryFn: () => skillApi.packs.list(),
+    });
+    const { data: founderProviderSpecs = [] } = useQuery({
+        queryKey: ['founder-provider-specs', 'agent-create'],
+        queryFn: requestFounderProviderSpecs,
     });
 
     // Auto-select default skills
@@ -262,7 +274,6 @@ export default function AgentCreate() {
         if (form.max_tokens_per_month && (isNaN(Number(form.max_tokens_per_month)) || Number(form.max_tokens_per_month) <= 0)) {
             errors.max_tokens_per_month = t('wizard.errors.tokenLimitInvalid', '请输入有效的正整数');
         }
-        const enabledModels = (models as any[]).filter((m: any) => m.enabled);
         if (agentType === 'native' && enabledModels.length > 0 && !form.primary_model_id) {
             errors.primary_model_id = t('wizard.errors.modelRequired', '请选择一个主模型');
         }
@@ -318,6 +329,19 @@ export default function AgentCreate() {
 
     const selectedModel = models.find((m: any) => m.id === form.primary_model_id);
     const isChineseUi = i18n.language?.toLowerCase().startsWith('zh');
+    const founderProviderPresetCards = buildFounderProviderPresetCards(founderProviderSpecs);
+    const preferredPresetCard = founderProviderPresetCards.find((item) => item.provider === founderPreferredProvider) || null;
+    const enabledModels = (models as any[]).filter((m: any) => m.enabled);
+    const sortedEnabledModels = [...enabledModels].sort((left: any, right: any) => {
+        if (founderPreferredProvider) {
+            const leftPreferred = left.provider === founderPreferredProvider ? 0 : 1;
+            const rightPreferred = right.provider === founderPreferredProvider ? 0 : 1;
+            if (leftPreferred !== rightPreferred) {
+                return leftPreferred - rightPreferred;
+            }
+        }
+        return String(left.label || '').localeCompare(String(right.label || ''));
+    });
     const templateCards = sortTemplates(templates as any[]);
     const skillCards = sortSkills(globalSkills as any[]);
     const selectedTemplate = templateCards.find((tmpl: any) => tmpl.id === form.template_id);
@@ -1494,9 +1518,65 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                         {/* Model Selection */}
                         <div className="form-group">
                             <label className="form-label">{t('wizard.step1.primaryModel')} <span style={{ color: 'var(--error)' }}>*</span></label>
+                            {founderProviderPresetCards.length > 0 && (
+                                <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+                                    <div style={{
+                                        padding: '12px 14px',
+                                        borderRadius: '10px',
+                                        background: 'var(--bg-elevated)',
+                                        border: '1px solid var(--border-default)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '12px',
+                                        lineHeight: 1.6,
+                                    }}>
+                                        {preferredPresetCard
+                                            ? (
+                                                isChineseUi
+                                                    ? `已沿用 Founder Workspace 中的 ${preferredPresetCard.labelZh} 预设，相关模型会优先展示。`
+                                                    : `Using the ${preferredPresetCard.labelEn} preset from Founder Workspace. Matching models are shown first.`
+                                            )
+                                            : (
+                                                isChineseUi
+                                                    ? '如果你不想先理解提供商和 Base URL，可以先点一个 Founder 预设，我们会优先展示对应模型。'
+                                                    : 'If you do not want to think about providers or base URLs yet, choose a founder preset and matching models will be prioritized.'
+                                            )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        {founderProviderPresetCards.slice(0, 3).map((card) => (
+                                            <button
+                                                key={card.provider}
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                onClick={() => {
+                                                    saveFounderPreferredProvider(card.provider);
+                                                    setFounderPreferredProvider(card.provider);
+                                                }}
+                                                style={{
+                                                    borderColor: founderPreferredProvider === card.provider ? 'var(--accent-primary)' : undefined,
+                                                    color: founderPreferredProvider === card.provider ? 'var(--accent-primary)' : undefined,
+                                                }}
+                                            >
+                                                {isChineseUi ? card.labelZh : card.labelEn}
+                                            </button>
+                                        ))}
+                                        {founderPreferredProvider && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                onClick={() => {
+                                                    clearFounderPreferredProvider();
+                                                    setFounderPreferredProvider(null);
+                                                }}
+                                            >
+                                                {isChineseUi ? '清除预设' : 'Clear preset'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                             {models.length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    {models.filter((m: any) => m.enabled).map((m: any) => (
+                                    {sortedEnabledModels.map((m: any) => (
                                         <label key={m.id} style={{
                                             display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
                                             background: form.primary_model_id === m.id ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
@@ -1507,7 +1587,12 @@ For humans, the message is delivered via their available channel (e.g. Feishu).`
                                                 onChange={() => { setForm({ ...form, primary_model_id: m.id }); clearFieldError('primary_model_id'); }} />
                                             <div>
                                                 <div style={{ fontWeight: 500, fontSize: '13px' }}>{m.label}</div>
-                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{m.provider}/{m.model}</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                    {m.provider}/{m.model}
+                                                    {founderPreferredProvider === m.provider
+                                                        ? (isChineseUi ? ' · Founder 预设优先' : ' · Founder preset priority')
+                                                        : ''}
+                                                </div>
                                             </div>
                                         </label>
                                     ))}
