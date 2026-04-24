@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
+import { agentApi } from '../services/api';
 import { founderWorkspaceApi } from '../services/founderWorkspace';
 import {
+    buildFounderCompanyDashboardBlockers,
+    hydrateFounderCompanyDashboardSnapshot,
     loadFounderCompanyDashboardSnapshot,
     resolveFounderCompanyDashboardSnapshot,
     summarizeFounderCompanyDashboard,
@@ -15,7 +18,7 @@ function buildFallbackSnapshot(workspaceName?: string): FounderCompanyDashboardS
     return {
         companyName: workspaceName || 'Founder Workspace',
         agents: [],
-        blockers: ['尚未形成可展示的物料化快照'],
+        blockers: ['还没有可展示的公司运行快照。'],
         relationshipCount: 0,
         triggerCount: 0,
     };
@@ -25,17 +28,31 @@ export default function FounderCompanyDashboard() {
     const { i18n } = useTranslation();
     const navigate = useNavigate();
     const isChinese = i18n.language?.startsWith('zh');
+
     const { data: workspaces = [] } = useQuery({
         queryKey: ['founder-workspaces'],
         queryFn: founderWorkspaceApi.list,
+        refetchInterval: 15000,
+    });
+    const { data: runtimeAgents = [] } = useQuery({
+        queryKey: ['agents', 'founder-dashboard'],
+        queryFn: () => agentApi.list(),
+        refetchInterval: 15000,
     });
 
     const currentWorkspace = workspaces[0] || null;
     const localSnapshot = loadFounderCompanyDashboardSnapshot();
-    const snapshot = resolveFounderCompanyDashboardSnapshot(
+    const scaffoldSnapshot = resolveFounderCompanyDashboardSnapshot(
         currentWorkspace,
         localSnapshot || buildFallbackSnapshot(currentWorkspace?.name),
     );
+    const snapshot = useMemo(() => {
+        const hydratedSnapshot = hydrateFounderCompanyDashboardSnapshot(scaffoldSnapshot, runtimeAgents);
+        return {
+            ...hydratedSnapshot,
+            blockers: buildFounderCompanyDashboardBlockers(currentWorkspace, hydratedSnapshot),
+        };
+    }, [currentWorkspace, runtimeAgents, scaffoldSnapshot]);
     const summary = useMemo(() => summarizeFounderCompanyDashboard(snapshot), [snapshot]);
 
     const sectionStyle: React.CSSProperties = {
@@ -51,12 +68,18 @@ export default function FounderCompanyDashboard() {
             <section
                 style={{
                     ...sectionStyle,
-                    background:
-                        'linear-gradient(135deg, rgba(0, 137, 123, 0.14), rgba(24, 90, 157, 0.14))',
+                    background: 'linear-gradient(135deg, rgba(0, 137, 123, 0.14), rgba(24, 90, 157, 0.14))',
                 }}
             >
                 <div style={{ display: 'grid', gap: '10px' }}>
-                    <div style={{ fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                    <div
+                        style={{
+                            fontSize: '12px',
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: 'var(--text-secondary)',
+                        }}
+                    >
                         Founder Company Dashboard
                     </div>
                     <h1 style={{ margin: 0, fontSize: '30px', lineHeight: 1.1 }}>
@@ -82,7 +105,7 @@ export default function FounderCompanyDashboard() {
                     <MetricCard label={isChinese ? '活跃 Agent' : 'Active agents'} value={String(summary.activeAgentCount)} />
                     <MetricCard label={isChinese ? '暂停 Agent' : 'Paused agents'} value={String(summary.pausedAgentCount)} />
                     <MetricCard label={isChinese ? '阻塞项' : 'Blockers'} value={String(summary.blockerCount)} />
-                    <MetricCard label={isChinese ? '关系连线' : 'Relationships'} value={String(snapshot.relationshipCount || 0)} />
+                    <MetricCard label={isChinese ? '协作关系' : 'Relationships'} value={String(snapshot.relationshipCount || 0)} />
                     <MetricCard label={isChinese ? '启动触发器' : 'Starter triggers'} value={String(snapshot.triggerCount || 0)} />
                 </div>
             </section>
@@ -95,8 +118,8 @@ export default function FounderCompanyDashboard() {
                         </h2>
                         <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '14px' }}>
                             {isChinese
-                                ? '优先展示后端工作区里持久化的 dashboard snapshot，本地快照只作为兜底。'
-                                : 'The dashboard now prefers the persisted backend workspace snapshot and only falls back to local browser state when necessary.'}
+                                ? '优先展示 Founder Workspace 持久化快照，再用实时 Agent 状态覆盖运行态。'
+                                : 'The dashboard starts from the persisted founder snapshot, then hydrates it with live agent runtime status.'}
                         </div>
                     </div>
 
@@ -104,7 +127,7 @@ export default function FounderCompanyDashboard() {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
                             {snapshot.agents.map((agent) => (
                                 <div
-                                    key={agent.name}
+                                    key={agent.id || agent.name}
                                     style={{
                                         border: '1px solid var(--border-subtle)',
                                         background: 'var(--bg-secondary)',
@@ -115,17 +138,31 @@ export default function FounderCompanyDashboard() {
                                     }}
                                 >
                                     <strong>{agent.name}</strong>
-                                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                    <span
+                                        style={{
+                                            color: getStatusColor(agent.status),
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            textTransform: 'capitalize',
+                                        }}
+                                    >
                                         {isChinese ? '状态' : 'Status'}: {agent.status}
                                     </span>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <div style={{ padding: '16px', borderRadius: '14px', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                        <div
+                            style={{
+                                padding: '16px',
+                                borderRadius: '14px',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-secondary)',
+                            }}
+                        >
                             {isChinese
-                                ? '还没有可展示的物料化结果。完成 ready_for_deploy_prep 后，在 Founder Workspace 中执行 materialize。'
-                                : 'No materialized scaffold is available yet. Finish the ready_for_deploy_prep step and materialize from Founder Workspace.'}
+                                ? '还没有可展示的物化结果。先在 Founder Workspace 完成 ready_for_deploy_prep，再执行 materialize。'
+                                : 'No materialized scaffold is available yet. Finish ready_for_deploy_prep in Founder Workspace and then materialize it.'}
                         </div>
                     )}
 
@@ -147,7 +184,7 @@ export default function FounderCompanyDashboard() {
                             </div>
                         )) : (
                             <div style={{ color: 'var(--text-secondary)' }}>
-                                {isChinese ? '当前没有阻塞项。' : 'There are no active blockers right now.'}
+                                {isChinese ? '当前没有活跃阻塞项。' : 'There are no active blockers right now.'}
                             </div>
                         )}
                     </div>
@@ -173,4 +210,18 @@ function MetricCard({ label, value }: { label: string; value: string }) {
             <div style={{ fontSize: '22px', fontWeight: 700 }}>{value}</div>
         </div>
     );
+}
+
+function getStatusColor(status: string) {
+    const normalized = (status || '').toLowerCase();
+    if (normalized === 'error') {
+        return '#d63031';
+    }
+    if (normalized === 'stopped' || normalized === 'paused') {
+        return '#b08900';
+    }
+    if (normalized === 'running' || normalized === 'idle' || normalized === 'active') {
+        return '#00897b';
+    }
+    return 'var(--text-secondary)';
 }

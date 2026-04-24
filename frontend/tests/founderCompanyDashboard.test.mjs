@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import {
+    buildFounderCompanyDashboardBlockers,
+    hydrateFounderCompanyDashboardSnapshot,
     resolveFounderCompanyDashboardSnapshot,
     summarizeFounderCompanyDashboard,
 } from '../src/services/founderCompanyDashboard.ts';
@@ -24,12 +26,15 @@ assert.deepEqual(
     resolveFounderCompanyDashboardSnapshot(
         {
             name: 'Workspace Snapshot',
+            current_state: 'materialized',
+            materialization_status: 'completed',
+            latest_plan: { plan_status: 'ready_for_deploy_prep' },
             dashboard_snapshot: {
                 workspace_id: 'workspace-1',
                 current_state: 'materialized',
                 materialization_status: 'completed',
                 created_agents: [
-                    { name: 'Founder Copilot', canonical_name: 'Founder Copilot', template_key: 'founder-copilot' },
+                    { id: 'agent-1', name: 'Founder Copilot', canonical_name: 'Founder Copilot', template_key: 'founder-copilot' },
                 ],
                 relationship_count: 3,
                 trigger_count: 2,
@@ -46,11 +51,85 @@ assert.deepEqual(
     {
         workspaceId: 'workspace-1',
         companyName: 'Workspace Snapshot',
-        agents: [{ name: 'Founder Copilot', status: 'idle' }],
+        agents: [{ id: 'agent-1', name: 'Founder Copilot', status: 'idle' }],
         blockers: [],
         relationshipCount: 3,
         triggerCount: 2,
     },
+);
+
+assert.deepEqual(
+    hydrateFounderCompanyDashboardSnapshot(
+        {
+            workspaceId: 'workspace-1',
+            companyName: 'Workspace Snapshot',
+            agents: [
+                { id: 'agent-1', name: 'Founder Copilot', status: 'idle' },
+                { id: 'agent-2', name: 'Content Strategy Lead', status: 'idle' },
+            ],
+            blockers: [],
+            relationshipCount: 3,
+            triggerCount: 2,
+        },
+        [
+            { id: 'agent-1', name: 'Founder Copilot', status: 'running' },
+            { id: 'agent-2', name: 'Content Strategy Lead', status: 'error' },
+        ],
+    ),
+    {
+        workspaceId: 'workspace-1',
+        companyName: 'Workspace Snapshot',
+        agents: [
+            { id: 'agent-1', name: 'Founder Copilot', status: 'running' },
+            { id: 'agent-2', name: 'Content Strategy Lead', status: 'error' },
+        ],
+        blockers: [],
+        relationshipCount: 3,
+        triggerCount: 2,
+    },
+);
+
+assert.deepEqual(
+    buildFounderCompanyDashboardBlockers(
+        {
+            name: 'Workspace Snapshot',
+            current_state: 'planning',
+            materialization_status: 'not_started',
+            latest_plan: { plan_status: 'ready_for_plan' },
+        },
+        {
+            workspaceId: 'workspace-1',
+            companyName: 'Workspace Snapshot',
+            agents: [],
+            blockers: [],
+            relationshipCount: 0,
+            triggerCount: 0,
+        },
+    ),
+    ['Founder 方案还没进入可物化阶段。'],
+);
+
+assert.deepEqual(
+    buildFounderCompanyDashboardBlockers(
+        {
+            name: 'Workspace Snapshot',
+            current_state: 'materialized',
+            materialization_status: 'completed',
+            latest_plan: { plan_status: 'ready_for_deploy_prep' },
+        },
+        {
+            workspaceId: 'workspace-1',
+            companyName: 'Workspace Snapshot',
+            agents: [
+                { id: 'agent-1', name: 'Founder Copilot', status: 'running' },
+                { id: 'agent-2', name: 'Content Strategy Lead', status: 'error' },
+            ],
+            blockers: [],
+            relationshipCount: 1,
+            triggerCount: 2,
+        },
+    ),
+    ['Content Strategy Lead 当前处于 error 状态。'],
 );
 
 console.log('founderCompanyDashboard tests passed');
