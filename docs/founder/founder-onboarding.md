@@ -237,6 +237,13 @@ Then open:
 
 - `http://127.0.0.1:3010/founder-workspace`
 
+If you want to run the deterministic founder release-readiness lane before manual browser validation:
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
 If you want to run the automated founder browser check:
 
 ```bash
@@ -246,4 +253,11 @@ FOUNDER_E2E_PASSWORD=<seeded-user-password> \
 FOUNDER_E2E_BASE_URL=http://127.0.0.1:3010 \
 FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
+```
+
+If those browser credentials are already exported in your shell, you can append the live gate to the deterministic lane from the backend directory:
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness --include-live-e2e
 ```

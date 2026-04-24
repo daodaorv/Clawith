@@ -237,6 +237,13 @@ VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --po
 
 - `http://127.0.0.1:3010/founder-workspace`
 
+如果你想在手工浏览器验证前，先跑一遍确定性的 founder 发布就绪检查：
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
 如果要执行自动化 founder 浏览器回归：
 
 ```bash
@@ -246,4 +253,11 @@ FOUNDER_E2E_PASSWORD=<测试账号密码> \
 FOUNDER_E2E_BASE_URL=http://127.0.0.1:3010 \
 FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
+```
+
+如果这些浏览器 E2E 环境变量已经提前导出，也可以在 `backend` 目录下直接把 live 门禁追加到确定性链路后面：
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness --include-live-e2e
 ```

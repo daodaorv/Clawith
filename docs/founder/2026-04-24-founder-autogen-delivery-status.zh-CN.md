@@ -68,6 +68,17 @@
 - `cd frontend && npm run build`
   - 通过
 
+Founder 现在还新增了一条确定性的 release-readiness 入口，会串起 founder 范围内的后端校验、前端测试和前端生产构建：
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
+同一条命令已经接入：
+
+- `.github/workflows/founder-release-readiness.yml`
+
 Founder 浏览器自动化现已纳入仓库，可通过以下命令运行：
 
 ```bash
@@ -146,10 +157,10 @@ Dashboard 上确认出现的 4 个 agent：
 
 - 现在 dashboard 会把 `idle` 也计入 active，这是当前实现的预期，因此 headline 显示 4 个 active agents 是正常结果。
 - 本地测试租户里仍保留了更早期手工注入的旧 agent 数据；当前 dashboard 之所以没有混淆，是因为它按 snapshot 中存储的 `agent.id` 去 hydrate 实时状态，而不是只按名称匹配。
-- Founder 自动化 E2E 已经补齐，但它仍依赖可用的前后端环境、预置的多租户测试账号以及本机 Microsoft Edge，目前还没有接入 CI。
+- Founder 的确定性 release-readiness 链路已经接入 CI，但 live E2E 仍依赖真实前后端环境、预置多租户测试账号以及本机 Microsoft Edge，所以这条浏览器门禁目前仍然保留为手工执行。
 
 ## 建议的下一步
 
-- 在测试账号策略稳定后，把 `npm run test:e2e:founder` 接入可选 CI 或 release-readiness 流水线。
+- 在测试账号和浏览器运行策略稳定后，再把 `npm run test:e2e:founder` 提升为可选 CI 作业。
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。

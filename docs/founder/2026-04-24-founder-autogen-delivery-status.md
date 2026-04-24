@@ -68,6 +68,17 @@ Verified on 2026-04-24:
 - `cd frontend && npm run build`
   - passed
 
+Founder now also has a deterministic release-readiness entrypoint that chains founder-scoped backend verification, founder frontend tests, and the frontend production build:
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
+The same command is wired into:
+
+- `.github/workflows/founder-release-readiness.yml`
+
 Founder browser automation is now repo-versioned and runnable through:
 
 ```bash
@@ -146,10 +157,10 @@ Screenshot artifacts:
 
 - The dashboard currently counts `idle` agents as active. This is intentional in the current implementation and is why the headline reports four active agents.
 - The local test tenant still contains older hand-injected agent records from earlier dashboard experiments. The current dashboard path stays correct because it hydrates live status against the snapshot's stored `agent.id` values instead of matching only by name.
-- The automated founder E2E runner is now available, but it still depends on a live frontend/backend environment, a seeded multi-tenant test account, and a local Microsoft Edge install. It is not yet wired into CI.
+- The deterministic founder release-readiness lane is now wired into CI, but the live founder E2E runner still depends on a live frontend/backend environment, a seeded multi-tenant test account, and a local Microsoft Edge install. That live browser gate remains manual.
 
 ## Recommended Follow-up
 
-- Wire `npm run test:e2e:founder` into an optional CI or release-readiness lane once a stable seeded test account strategy is in place.
+- Promote `npm run test:e2e:founder` into an optional CI job only after a stable seeded test account and browser/runtime strategy is in place.
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

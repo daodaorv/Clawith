@@ -123,6 +123,15 @@ Clawith 现在已经提供 founder 导向的主流程，可以先持久化 found
 
 如果你要手工验证这个流程，先用上面的代理命令把源码前端跑在 `http://127.0.0.1:3010`，然后打开 `http://127.0.0.1:3010/founder-workspace`。
 
+如果你想先跑一遍确定性的 founder 发布就绪检查，可以执行：
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
+同一条检查链路现在也已经接入 `.github/workflows/founder-release-readiness.yml`。依赖真实账号、运行环境和本机 Edge 兼容浏览器的 founder live E2E 仍然保留为显式手工门禁，没有强行塞进 CI。
+
 ### Docker 部署
 
 ```bash

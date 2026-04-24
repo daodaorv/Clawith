@@ -128,6 +128,15 @@ Reference docs:
 
 For manual verification, start the source frontend on `http://127.0.0.1:3010` using the proxy command above, then open `http://127.0.0.1:3010/founder-workspace`.
 
+For deterministic founder release-readiness checks, run:
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness
+```
+
+The same lane now runs in GitHub Actions through `.github/workflows/founder-release-readiness.yml`. Live founder browser E2E remains an explicit manual gate because it still depends on a seeded account, a running environment, and a local Edge-compatible browser.
+
 ### Docker
 
 ```bash
