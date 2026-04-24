@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import datetime, timezone as tz
+import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -156,7 +157,7 @@ async def list_sessions(
             .where(
                 ChatSession.agent_id == agent_id,
                 ChatSession.user_id == current_user.id,
-                ChatSession.is_group == False,  # Group sessions are not "mine"
+                ChatSession.is_group.is_(False),  # Group sessions are not "mine"
                 ChatSession.source_channel.notin_(["agent", "trigger"]),  # Exclude agent-to-agent and reflection sessions
             )
             .order_by(ChatSession.last_message_at.desc().nulls_last(), ChatSession.created_at.desc())
@@ -368,10 +369,6 @@ async def get_session_messages(
             out.append(entry)
 
     return out
-
-
-import re
-
 def _split_inline_tools(content: str) -> list[dict]:
     """Parse assistant content containing inline ```tool_code blocks.
 
