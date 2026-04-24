@@ -121,3 +121,20 @@ async def test_wire_founder_company_creates_relationships_and_triggers():
     assert len(relationship_records) == 2
     assert len(trigger_records) == 3
     assert {item.relation for item in relationship_records} == {"supervisor", "collaborator"}
+
+    trigger_by_agent_id = {item.agent_id: item for item in trigger_records}
+    founder_trigger = trigger_by_agent_id[created_agents["Founder Copilot"]]
+    content_trigger = trigger_by_agent_id[created_agents["Content Strategy Lead"]]
+    distribution_trigger = trigger_by_agent_id[created_agents["Global Distribution Lead"]]
+
+    assert founder_trigger.type == "cron"
+    assert founder_trigger.config == {"expr": "0 9 * * 1-5"}
+    assert founder_trigger.cooldown_seconds == 1800
+
+    assert content_trigger.type == "cron"
+    assert content_trigger.config == {"expr": "0 10 * * 1-5"}
+    assert content_trigger.cooldown_seconds == 1800
+
+    assert distribution_trigger.type == "cron"
+    assert distribution_trigger.config == {"expr": "0 14 * * 1-5"}
+    assert distribution_trigger.cooldown_seconds == 1800

@@ -7,6 +7,39 @@ from app.models.org import AgentAgentRelationship
 from app.models.trigger import AgentTrigger
 from app.schemas.founder_mainline import FounderMainlineDraftPlan
 
+_ROLE_TRIGGER_SPECS = {
+    "Founder Copilot": {
+        "type": "cron",
+        "config": {"expr": "0 9 * * 1-5"},
+        "reason": "Weekday founder goal review and company-level prioritization.",
+        "cooldown_seconds": 1800,
+    },
+    "Content Strategy Lead": {
+        "type": "cron",
+        "config": {"expr": "0 10 * * 1-5"},
+        "reason": "Weekday content planning and draft production cadence.",
+        "cooldown_seconds": 1800,
+    },
+    "Global Distribution Lead": {
+        "type": "cron",
+        "config": {"expr": "0 14 * * 1-5"},
+        "reason": "Weekday distribution adaptation and channel follow-through.",
+        "cooldown_seconds": 1800,
+    },
+    "Customer Follow-up Lead": {
+        "type": "cron",
+        "config": {"expr": "0 16 * * 1-5"},
+        "reason": "Weekday lead follow-up and customer feedback triage.",
+        "cooldown_seconds": 1800,
+    },
+    "Project Chief of Staff": {
+        "type": "cron",
+        "config": {"expr": "0 18 * * 1-5"},
+        "reason": "Weekday end-of-day review and blocker escalation sweep.",
+        "cooldown_seconds": 1800,
+    },
+}
+
 
 def _map_relationship_type(value: str) -> str:
     normalized = (value or "").strip().lower()
@@ -17,6 +50,26 @@ def _map_relationship_type(value: str) -> str:
     if normalized in {"peer"}:
         return "peer"
     return "collaborator"
+
+
+def _build_trigger_payload(agent_name: str) -> dict[str, object]:
+    trigger_spec = _ROLE_TRIGGER_SPECS.get(agent_name)
+    if trigger_spec:
+        return {
+            "name": f"{agent_name} starter cadence"[:100],
+            "type": trigger_spec["type"],
+            "config": dict(trigger_spec["config"]),
+            "reason": trigger_spec["reason"],
+            "cooldown_seconds": trigger_spec["cooldown_seconds"],
+        }
+
+    return {
+        "name": f"{agent_name} starter cadence"[:100],
+        "type": "interval",
+        "config": {"minutes": 1440},
+        "reason": f"Founder starter cadence for {agent_name}",
+        "cooldown_seconds": 300,
+    }
 
 
 async def wire_founder_company(
@@ -39,21 +92,22 @@ async def wire_founder_company(
                 agent_id=source_agent_id,
                 target_agent_id=target_agent_id,
                 relation=_map_relationship_type(relationship.relationship_type),
-                description="；".join(part for part in description_parts if part),
+                description="; ".join(part for part in description_parts if part),
             )
         )
         relationship_count += 1
 
     trigger_count = 0
     for agent_name, agent_id in created_agents_by_name.items():
+        trigger_payload = _build_trigger_payload(agent_name)
         db.add(
             AgentTrigger(
                 agent_id=agent_id,
-                name=f"{agent_name} starter cadence"[:100],
-                type="interval",
-                config={"minutes": 1440},
-                reason=f"Founder starter cadence for {agent_name}",
-                cooldown_seconds=300,
+                name=trigger_payload["name"],
+                type=trigger_payload["type"],
+                config=trigger_payload["config"],
+                reason=trigger_payload["reason"],
+                cooldown_seconds=trigger_payload["cooldown_seconds"],
             )
         )
         trigger_count += 1
