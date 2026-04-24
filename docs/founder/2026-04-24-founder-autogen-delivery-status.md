@@ -40,6 +40,10 @@ Key shipped backend change set:
   - dashboard summary and blocker derivation
 - `frontend/src/services/founderWorkspace.ts`
   - founder workspace API client
+- `frontend/src/services/founderMainlineE2e.ts`
+  - shared config and scenario builder for founder mainline browser coverage
+- `frontend/tests/e2e/founderMainlineE2e.mjs`
+  - self-bootstrapping live browser runner for the founder mainline flow
 
 Key shipped frontend change set:
 
@@ -55,12 +59,31 @@ Verified on 2026-04-24:
   - passed
 - `node --test frontend/tests/*.mjs`
   - passed: `19/19`
+- `node --test frontend/tests/founderCompanyDashboard.test.mjs frontend/tests/founderMainlineE2eRuntime.test.mjs`
+  - passed
 - `cd frontend && npm run build`
   - passed
 
+Founder browser automation is now repo-versioned and runnable through:
+
+```bash
+cd frontend
+FOUNDER_E2E_EMAIL=<seeded-user-email> \
+FOUNDER_E2E_PASSWORD=<seeded-user-password> \
+FOUNDER_E2E_BASE_URL=http://127.0.0.1:3010 \
+FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
+npm run test:e2e:founder
+```
+
+Notes about the browser runner:
+
+- It installs `playwright-core@1.59.1` into a temporary runtime directory on demand instead of adding Playwright to repo dependencies.
+- It launches the system Microsoft Edge executable and writes screenshots to `output/playwright/`.
+- It covers `login -> tenant select (when required) -> founder workspace create -> planning interview -> draft -> confirm -> materialize -> founder dashboard assertions`.
+
 ## Real UI / API Mainline Verification
 
-The founder happy path was also run through the real UI and API on 2026-04-24.
+The founder happy path was run through the real UI and API on 2026-04-24, both manually and through the automated browser runner.
 
 Environment:
 
@@ -70,15 +93,16 @@ Environment:
 Natural flow that was completed:
 
 1. Register or log in
-2. Create company
-3. Create founder workspace
-4. Select a configured model
-5. Fill the eight interview answers
-6. Save interview progress
-7. Generate draft plan
-8. Confirm readiness
-9. Materialize the company
-10. Land on founder dashboard
+2. Select the correct tenant when multi-tenant login is required
+3. Create company
+4. Create founder workspace
+5. Select a configured model
+6. Fill the eight interview answers
+7. Save interview progress
+8. Generate draft plan
+9. Confirm readiness
+10. Materialize the company
+11. Land on founder dashboard
 
 Observed API evidence:
 
@@ -89,17 +113,14 @@ Observed API evidence:
 - second `POST /api/founder-workspaces/{id}/planning/draft-plan` after confirmation -> `200`
 - `POST /api/founder-workspaces/{id}/materialize` -> `200`
 
-Verified runtime result:
+Verified runtime result from the automated run:
 
-- workspace name: `Founder Natural Flow Studio`
-- workspace id: `8f7cdea2-724d-4f1b-a83c-b33625089771`
+- workspace name: `Founder Workspace 13-10-15`
 - final route: `/founder-workspace/dashboard`
-- dashboard headline: `Founder Natural Flow Studio currently has 4 active agents`
-- total agents: `4`
-- active agents: `4`
-- paused agents: `0`
+- dashboard headline: `Founder Workspace 13-10-15 currently has 4 active agents`
+- total displayed agents: `4`
 - blockers: `0`
-- collaborations: `3`
+- relationships: `3`
 - starter triggers: `4`
 
 Materialized agent cards shown on the dashboard:
@@ -111,6 +132,7 @@ Materialized agent cards shown on the dashboard:
 
 Screenshot artifacts:
 
+- `output/playwright/2026-04-24T13-10-15-461Z-*.png`
 - `output/playwright/founder-natural-dashboard.png`
 - `output/playwright/founder-natural-dashboard-full.png`
 - `output/playwright/founder-dashboard-final.png`
@@ -120,10 +142,10 @@ Screenshot artifacts:
 
 - The dashboard currently counts `idle` agents as active. This is intentional in the current implementation and is why the headline reports four active agents.
 - The local test tenant still contains older hand-injected agent records from earlier dashboard experiments. The current dashboard path stays correct because it hydrates live status against the snapshot's stored `agent.id` values instead of matching only by name.
-- The founder happy path has been validated manually against the real UI/API, but it is not yet covered by a CI-grade browser test.
+- The automated founder E2E runner is now available, but it still depends on a live frontend/backend environment, a seeded multi-tenant test account, and a local Microsoft Edge install. It is not yet wired into CI.
 
 ## Recommended Follow-up
 
-- Promote `output/founder-e2e-flow.cjs` into a stable automated E2E check for the founder happy path.
+- Wire `npm run test:e2e:founder` into an optional CI or release-readiness lane once a stable seeded test account strategy is in place.
 - Add a reset/cleanup routine for local founder demo tenants so manual verification starts from a cleaner state.
 - If product delivery needs stronger operator guidance, add a user-facing founder onboarding document that explains the required model setup before the workflow begins.

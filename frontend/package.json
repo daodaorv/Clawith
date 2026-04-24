@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:founder": "node tests/e2e/founderMainlineE2e.mjs"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.40.0",
