@@ -4,6 +4,7 @@ import {
     buildFounderCompanyDashboardBlockers,
     hydrateFounderCompanyDashboardSnapshot,
     resolveFounderCompanyDashboardSnapshot,
+    resolveFounderCompanyDashboardWorkspace,
     summarizeFounderCompanyDashboard,
 } from '../src/services/founderCompanyDashboard.ts';
 
@@ -21,6 +22,42 @@ assert.equal(summary.activeAgentCount, 2);
 assert.equal(summary.hasBlockers, true);
 assert.equal(summary.headlineZh, 'Solo Growth Studio 当前有 2 个活跃 Agent');
 assert.equal(summary.nextActionZh, '先处理 1 个阻塞项，再恢复自动协作节奏。');
+
+assert.equal(
+    resolveFounderCompanyDashboardWorkspace(
+        [
+            {
+                id: 'workspace-1',
+                name: 'Old Workspace',
+                current_state: 'materialized',
+                materialization_status: 'completed',
+                latest_plan: { plan_status: 'ready_for_deploy_prep' },
+            },
+            {
+                id: 'workspace-2',
+                name: 'Current Workspace',
+                current_state: 'materialized',
+                materialization_status: 'completed',
+                latest_plan: { plan_status: 'ready_for_deploy_prep' },
+                dashboard_snapshot: {
+                    workspace_id: 'workspace-2',
+                    created_agents: [],
+                    relationship_count: 0,
+                    trigger_count: 0,
+                },
+            },
+        ],
+        {
+            workspaceId: 'workspace-2',
+            companyName: 'Current Workspace',
+            agents: [],
+            blockers: [],
+            relationshipCount: 0,
+            triggerCount: 0,
+        },
+    )?.id,
+    'workspace-2',
+);
 
 assert.deepEqual(
     resolveFounderCompanyDashboardSnapshot(

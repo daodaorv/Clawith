@@ -81,6 +81,7 @@ export interface FounderWorkspaceInterviewProgressRequest {
 export type FounderWorkspaceDraftPlanRequest = FounderMainlineDraftPlanRequest;
 
 export type FounderWorkspaceStep = 'intake' | 'review' | 'dashboard';
+export const FOUNDER_ACTIVE_WORKSPACE_KEY = 'founder_active_workspace_id';
 
 async function requestFounderWorkspace<T>(url: string, options: RequestInit = {}): Promise<T> {
     const token = localStorage.getItem('token');
@@ -126,6 +127,42 @@ export function deriveFounderWorkspaceStep(workspace: Pick<
     }
 
     return 'intake';
+}
+
+export function resolveFounderWorkspaceSelection<T extends { id: string }>(
+    workspaces: T[] = [],
+    preferredWorkspaceId?: string | null,
+    fallbackWorkspace: T | null = null,
+): T | null {
+    if (preferredWorkspaceId) {
+        const matchedWorkspace = workspaces.find((workspace) => workspace.id === preferredWorkspaceId);
+        if (matchedWorkspace) {
+            return matchedWorkspace;
+        }
+    }
+
+    return workspaces[0] || fallbackWorkspace;
+}
+
+export function loadFounderActiveWorkspaceId(): string {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+
+    return window.localStorage.getItem(FOUNDER_ACTIVE_WORKSPACE_KEY) || '';
+}
+
+export function saveFounderActiveWorkspaceId(workspaceId: string): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    if (!workspaceId) {
+        window.localStorage.removeItem(FOUNDER_ACTIVE_WORKSPACE_KEY);
+        return;
+    }
+
+    window.localStorage.setItem(FOUNDER_ACTIVE_WORKSPACE_KEY, workspaceId);
 }
 
 export function buildFounderWorkspaceAnswerMap(workspaceLike: {

@@ -19,6 +19,9 @@ import {
     buildFounderWorkspaceAnswerMap,
     deriveFounderWorkspaceStep,
     founderWorkspaceApi,
+    loadFounderActiveWorkspaceId,
+    resolveFounderWorkspaceSelection,
+    saveFounderActiveWorkspaceId,
     type FounderWorkspace,
 } from '../services/founderWorkspace';
 import {
@@ -87,6 +90,7 @@ export default function FounderWorkspace() {
     const queryClient = useQueryClient();
     const isChinese = i18n.language?.startsWith('zh');
     const [preferredProvider, setPreferredProvider] = useState(() => loadFounderPreferredProvider());
+    const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => loadFounderActiveWorkspaceId());
 
     const [form, setForm] = useState({
         name: '',
@@ -116,8 +120,10 @@ export default function FounderWorkspace() {
 
     const createMutation = useMutation({
         mutationFn: founderWorkspaceApi.create,
-        onSuccess: async () => {
+        onSuccess: async (createdWorkspace) => {
             await queryClient.invalidateQueries({ queryKey: ['founder-workspaces'] });
+            saveFounderActiveWorkspaceId(createdWorkspace.id);
+            setActiveWorkspaceId(createdWorkspace.id);
             setForm({
                 name: '',
                 businessBrief: '',
@@ -128,7 +134,11 @@ export default function FounderWorkspace() {
         },
     });
 
-    const currentWorkspace = workspaces[0] || createMutation.data || null;
+    const currentWorkspace = resolveFounderWorkspaceSelection(
+        workspaces,
+        activeWorkspaceId,
+        createMutation.data || null,
+    );
     const currentStep = currentWorkspace ? deriveFounderWorkspaceStep(currentWorkspace) : 'intake';
     const mutationError = createMutation.error instanceof Error ? createMutation.error.message : '';
     const providerPresetCards = useMemo(
@@ -146,6 +156,17 @@ export default function FounderWorkspace() {
         && currentWorkspace.materialization_status !== 'completed'
         && currentPlanStatus === 'ready_for_deploy_prep',
     );
+
+    useEffect(() => {
+        if (!currentWorkspace?.id) {
+            return;
+        }
+
+        if (activeWorkspaceId !== currentWorkspace.id) {
+            saveFounderActiveWorkspaceId(currentWorkspace.id);
+            setActiveWorkspaceId(currentWorkspace.id);
+        }
+    }, [activeWorkspaceId, currentWorkspace?.id]);
 
     useEffect(() => {
         if (!currentWorkspace) {
@@ -240,6 +261,8 @@ export default function FounderWorkspace() {
     const materializeMutation = useMutation({
         mutationFn: (workspaceId: string) => founderWorkspaceApi.materialize(workspaceId),
         onSuccess: async (result) => {
+            saveFounderActiveWorkspaceId(result.workspace_id);
+            setActiveWorkspaceId(result.workspace_id);
             const snapshot = resolveFounderCompanyDashboardSnapshot(
                 {
                     name: currentWorkspace?.name,
@@ -263,6 +286,12 @@ export default function FounderWorkspace() {
             navigate('/founder-workspace/dashboard');
         },
     });
+
+    const selectWorkspace = (workspaceId: string) => {
+        saveFounderActiveWorkspaceId(workspaceId);
+        setActiveWorkspaceId(workspaceId);
+        setLocalError('');
+    };
 
     const handleCreate = () => {
         const name = form.name.trim();
@@ -813,7 +842,13 @@ export default function FounderWorkspace() {
                                     </button>
                                 )}
                                 {currentWorkspace.materialization_status === 'completed' && (
-                                    <button className="btn btn-secondary" onClick={() => navigate('/founder-workspace/dashboard')}>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                            selectWorkspace(currentWorkspace.id);
+                                            navigate('/founder-workspace/dashboard');
+                                        }}
+                                    >
                                         {isChinese ? '打开 Founder Dashboard' : 'Open Founder Dashboard'}
                                     </button>
                                 )}
@@ -839,15 +874,18 @@ export default function FounderWorkspace() {
                                     <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
                                         {isChinese ? '其他已保存工作区' : 'Other saved workspaces'}
                                     </div>
-                                    {workspaces.slice(1).map((workspace) => (
+                                    {workspaces
+                                        .filter((workspace) => workspace.id !== currentWorkspace.id)
+                                        .map((workspace) => (
                                         <WorkspaceCard
                                             key={workspace.id}
                                             workspace={workspace}
                                             isChinese={isChinese}
                                             currentStep={deriveFounderWorkspaceStep(workspace)}
                                             compact
+                                            onSelect={() => selectWorkspace(workspace.id)}
                                         />
-                                    ))}
+                                        ))}
                                 </div>
                             )}
                         </div>
@@ -934,11 +972,13 @@ function WorkspaceCard({
     isChinese,
     currentStep,
     compact = false,
+    onSelect,
 }: {
     workspace: FounderWorkspace;
     isChinese: boolean;
     currentStep: ReturnType<typeof deriveFounderWorkspaceStep>;
     compact?: boolean;
+    onSelect?: () => void;
 }) {
     return (
         <div
@@ -949,7 +989,9 @@ function WorkspaceCard({
                 display: 'grid',
                 gap: compact ? '10px' : '14px',
                 background: 'var(--bg-secondary)',
+                cursor: onSelect ? 'pointer' : 'default',
             }}
+            onClick={onSelect}
         >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'grid', gap: '6px' }}>
@@ -986,6 +1028,12 @@ function WorkspaceCard({
                     value={workspace.materialization_status}
                 />
             </div>
+
+            {compact && onSelect && (
+                <div style={{ color: 'var(--accent-primary)', fontSize: '13px', fontWeight: 600 }}>
+                    {isChinese ? 'Continue this workspace' : 'Click to continue with this workspace'}
+                </div>
+            )}
 
             <div style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.7 }}>
                 <strong style={{ color: 'var(--text-primary)' }}>

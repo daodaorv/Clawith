@@ -10,6 +10,7 @@ import {
     hydrateFounderCompanyDashboardSnapshot,
     loadFounderCompanyDashboardSnapshot,
     resolveFounderCompanyDashboardSnapshot,
+    resolveFounderCompanyDashboardWorkspace,
     summarizeFounderCompanyDashboard,
     type FounderCompanyDashboardSnapshot,
 } from '../services/founderCompanyDashboard';
@@ -40,8 +41,8 @@ export default function FounderCompanyDashboard() {
         refetchInterval: 15000,
     });
 
-    const currentWorkspace = workspaces[0] || null;
     const localSnapshot = loadFounderCompanyDashboardSnapshot();
+    const currentWorkspace = resolveFounderCompanyDashboardWorkspace(workspaces, localSnapshot);
     const scaffoldSnapshot = resolveFounderCompanyDashboardSnapshot(
         currentWorkspace,
         localSnapshot || buildFallbackSnapshot(currentWorkspace?.name),

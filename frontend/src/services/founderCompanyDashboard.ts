@@ -1,3 +1,8 @@
+import {
+    loadFounderActiveWorkspaceId,
+    resolveFounderWorkspaceSelection,
+} from './founderWorkspace.ts';
+
 export interface FounderCompanyDashboardAgent {
     id?: string;
     name: string;
@@ -28,6 +33,7 @@ export interface FounderCompanyDashboardSummary {
 }
 
 export interface FounderCompanyDashboardWorkspaceLike {
+    id?: string;
     name?: string;
     current_state?: string;
     materialization_status?: string;
@@ -86,6 +92,16 @@ export function summarizeFounderCompanyDashboard(
                 ? 'You can now observe the operating cadence and define the next growth target.'
                 : 'Start at least one agent first to establish the core operating loop.',
     };
+}
+
+export function resolveFounderCompanyDashboardWorkspace<T extends FounderCompanyDashboardWorkspaceLike & { id: string }>(
+    workspaces: T[] = [],
+    localSnapshot: FounderCompanyDashboardSnapshot | null = null,
+): T | null {
+    return resolveFounderWorkspaceSelection(
+        workspaces,
+        localSnapshot?.workspaceId || loadFounderActiveWorkspaceId(),
+    );
 }
 
 export function resolveFounderCompanyDashboardSnapshot(
