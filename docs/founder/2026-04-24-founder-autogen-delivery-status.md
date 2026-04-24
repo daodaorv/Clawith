@@ -151,5 +151,5 @@ Screenshot artifacts:
 ## Recommended Follow-up
 
 - Wire `npm run test:e2e:founder` into an optional CI or release-readiness lane once a stable seeded test account strategy is in place.
-- Add a reset/cleanup routine for local founder demo tenants so manual verification starts from a cleaner state.
+- Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

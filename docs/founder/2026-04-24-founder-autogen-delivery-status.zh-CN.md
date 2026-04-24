@@ -151,5 +151,5 @@ Dashboard 上确认出现的 4 个 agent：
 ## 建议的下一步
 
 - 在测试账号策略稳定后，把 `npm run test:e2e:founder` 接入可选 CI 或 release-readiness 流水线。
-- 为本地 founder demo tenants 增加 reset / cleanup 机制，减少手工验收时的脏数据影响。
+- 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。
