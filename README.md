@@ -116,6 +116,17 @@ VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --po
 
 This keeps the latest source frontend on `http://127.0.0.1:3010` while proxying `/api` and `/ws` through the already-running Docker web entrypoint on `3008`.
 
+### Founder Autogen MVP
+
+Clawith now includes a founder-facing flow that persists a founder workspace, runs `interview -> draft -> approval -> materialize`, and lands the user on a dedicated company dashboard backed by live runtime state.
+
+Reference docs:
+
+- [Founder implementation plan](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)
+- [Founder delivery status and verification evidence](docs/founder/2026-04-24-founder-autogen-delivery-status.md)
+
+For manual verification, start the source frontend on `http://127.0.0.1:3010` using the proxy command above, then open `http://127.0.0.1:3010/founder-workspace`.
+
 ### Docker
 
 ```bash
