@@ -123,6 +123,7 @@ Clawith now includes a founder-facing flow that persists a founder workspace, ru
 Reference docs:
 
 - [Founder implementation plan](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)
+- [Founder onboarding guide](docs/founder/founder-onboarding.md)
 - [Founder delivery status and verification evidence](docs/founder/2026-04-24-founder-autogen-delivery-status.md)
 
 For manual verification, start the source frontend on `http://127.0.0.1:3010` using the proxy command above, then open `http://127.0.0.1:3010/founder-workspace`.

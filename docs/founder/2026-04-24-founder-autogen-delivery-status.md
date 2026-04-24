@@ -13,6 +13,10 @@ This closes the main implementation plan tracked in:
 
 - `docs/superpowers/plans/2026-04-23-founder-autogen-framework.md`
 
+Related founder docs:
+
+- `docs/founder/founder-onboarding.md`
+
 ## Delivered Product Slice
 
 ### Backend
@@ -148,4 +152,4 @@ Screenshot artifacts:
 
 - Wire `npm run test:e2e:founder` into an optional CI or release-readiness lane once a stable seeded test account strategy is in place.
 - Add a reset/cleanup routine for local founder demo tenants so manual verification starts from a cleaner state.
-- If product delivery needs stronger operator guidance, add a user-facing founder onboarding document that explains the required model setup before the workflow begins.
+- Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

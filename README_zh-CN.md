@@ -111,6 +111,18 @@ VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --po
 
 这样最新源码前端会运行在 `http://127.0.0.1:3010`，而 `/api` 和 `/ws` 会继续通过 `3008` 上已经运行的 Docker Web 入口转发。
 
+### Founder Autogen MVP
+
+Clawith 现在已经提供 founder 导向的主流程，可以先持久化 founder workspace，再跑通 `interview -> draft -> approval -> materialize`，最后把用户送到一个由实时运行态驱动的公司 dashboard。
+
+参考文档：
+
+- [Founder 实现规划](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)
+- [Founder 入门指南](docs/founder/founder-onboarding.zh-CN.md)
+- [Founder 交付状态与验证证据](docs/founder/2026-04-24-founder-autogen-delivery-status.zh-CN.md)
+
+如果你要手工验证这个流程，先用上面的代理命令把源码前端跑在 `http://127.0.0.1:3010`，然后打开 `http://127.0.0.1:3010/founder-workspace`。
+
 ### Docker 部署
 
 ```bash

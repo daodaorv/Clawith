@@ -13,6 +13,10 @@
 
 - `docs/superpowers/plans/2026-04-23-founder-autogen-framework.md`
 
+相关 founder 文档：
+
+- `docs/founder/founder-onboarding.zh-CN.md`
+
 ## 已交付内容
 
 ### 后端
@@ -148,4 +152,4 @@ Dashboard 上确认出现的 4 个 agent：
 
 - 在测试账号策略稳定后，把 `npm run test:e2e:founder` 接入可选 CI 或 release-readiness 流水线。
 - 为本地 founder demo tenants 增加 reset / cleanup 机制，减少手工验收时的脏数据影响。
-- 如果要面向零 AI / 零工程经验用户继续交付，可以补一份 founder onboarding 文档，说明模型准备要求与首次启动步骤。
+- 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。
