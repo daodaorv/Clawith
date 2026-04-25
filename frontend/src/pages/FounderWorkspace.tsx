@@ -126,6 +126,9 @@ export default function FounderWorkspace() {
             await queryClient.invalidateQueries({ queryKey: ['founder-workspaces'] });
             saveFounderActiveWorkspaceId(createdWorkspace.id);
             setActiveWorkspaceId(createdWorkspace.id);
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.set('workspaceId', createdWorkspace.id);
+            setSearchParams(nextSearchParams, { replace: true });
             setForm({
                 name: '',
                 businessBrief: '',

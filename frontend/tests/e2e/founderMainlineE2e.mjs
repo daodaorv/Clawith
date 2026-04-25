@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import {
     buildFounderMainlineE2eConfig,
     buildFounderMainlineE2eScenario,
+    buildFounderDashboardUrl,
+    buildFounderWorkspaceUrl,
 } from '../../src/services/founderMainlineE2e.ts';
 
 const PLAYWRIGHT_CORE_VERSION = '1.59.1';
@@ -87,12 +89,21 @@ async function fillTextboxByName(page, name, value) {
     await field.fill(value);
 }
 
-async function choosePlanningModel(page, modelLabel) {
-    await page.waitForFunction(
-        () => document.querySelectorAll('#founder-planning-section button:not(.btn)').length > 0,
-        null,
-        { timeout: 30000 },
-    );
+async function choosePlanningModel(page, modelLabel, authMode) {
+    try {
+        await page.waitForFunction(
+            () => document.querySelectorAll('#founder-planning-section button:not(.btn)').length > 0,
+            null,
+            { timeout: 30000 },
+        );
+    } catch (error) {
+        if (authMode === 'self_bootstrap') {
+            throw new Error(
+                'No planning model buttons are available for the freshly bootstrapped company. Configure at least one enabled LLM model for that tenant, or provide FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD for a model-ready founder tenant.',
+            );
+        }
+        throw error;
+    }
 
     await page.evaluate((desiredLabel) => {
         const section = document.getElementById('founder-planning-section');
@@ -123,6 +134,19 @@ function extractMetric(pageText, label) {
     const escapedLabel = escapeRegExp(label);
     const match = pageText.match(new RegExp(`${escapedLabel}\\s*(\\d+)`, 'i'));
     return match ? Number(match[1]) : null;
+}
+
+function buildFounderSelfBootstrapIdentity(runId) {
+    const suffix = runId
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(-24) || `${Date.now()}`;
+    return {
+        email: `founder-e2e-${suffix}@example.com`,
+        password: 'OpenClaw!12345',
+        companyName: `Founder E2E Company ${suffix}`,
+    };
 }
 
 async function chooseTenantIfPresent(page, tenantName) {
@@ -189,6 +213,74 @@ async function waitForLoginOutcome(page, tenantName, timeout = 30000) {
     return result;
 }
 
+async function loginFounderSession(page, config, shot) {
+    await page.locator('form.login-form input[type="email"]').fill(config.email);
+    await page.locator('form.login-form input[type="password"]').fill(config.password);
+    await page.locator('form.login-form button.login-submit').click();
+
+    const loginOutcome = await waitForLoginOutcome(page, config.tenantName);
+    if (loginOutcome.outcome === 'error') {
+        throw new Error(`Login failed: ${loginOutcome.message}`);
+    }
+
+    if (loginOutcome.outcome === 'tenant') {
+        const tenantSelected = await chooseTenantIfPresent(
+            page,
+            loginOutcome.tenantLabel || config.tenantName,
+        );
+        assert.equal(
+            tenantSelected,
+            true,
+            `Expected tenant selection button "${loginOutcome.tenantLabel || config.tenantName}" to be clickable.`,
+        );
+        await shot('02-tenant-modal');
+    }
+
+    await page.waitForFunction(() => Boolean(window.localStorage.getItem('token')), null, {
+        timeout: 30000,
+    });
+    await page.waitForURL((url) => url.pathname !== '/login', { timeout: 30000 }).catch(() => {});
+}
+
+async function selfBootstrapFounderSession(page, { email, password, companyName, shot }) {
+    await page.locator('.login-switch a').click();
+    await page.getByRole('button', { name: /^Register/i }).waitFor({ state: 'visible', timeout: 30000 });
+
+    await page.locator('form.login-form input[type="email"]').fill(email);
+    await page.locator('form.login-form input[type="password"]').fill(password);
+    await shot('02-self-bootstrap-register');
+    await page.locator('form.login-form button.login-submit').click();
+
+    await page.waitForFunction(() => Boolean(window.localStorage.getItem('token')), null, {
+        timeout: 30000,
+    });
+    await page.waitForURL((url) => url.pathname !== '/login', { timeout: 30000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+
+    if (new URL(page.url()).pathname === '/setup-company') {
+        const createCompanyPanel = page.locator('.company-setup-panel').last();
+        await createCompanyPanel.waitFor({ state: 'visible', timeout: 30000 });
+        await createCompanyPanel.locator('input').first().fill(companyName);
+        await shot('02b-self-bootstrap-company-setup');
+        await createCompanyPanel.locator('button.login-submit').click();
+        await page.waitForURL((url) => url.pathname !== '/setup-company', { timeout: 30000 }).catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+    }
+
+    if (new URL(page.url()).pathname === '/verify-email') {
+        await shot('02c-self-bootstrap-verify-email');
+        await page.waitForURL((url) => url.pathname !== '/verify-email', { timeout: 15000 }).catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+        if (new URL(page.url()).pathname === '/verify-email') {
+            throw new Error(
+                'Self-bootstrap registration requires email verification. Set FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD or disable SMTP auto-verification for local live E2E.',
+            );
+        }
+    }
+
+    await shot('02d-self-bootstrap-ready');
+}
+
 async function main() {
     const config = buildFounderMainlineE2eConfig(process.env);
     const runId = new Date().toISOString().replace(/[:.]/g, '-');
@@ -239,34 +331,16 @@ async function main() {
         await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
         await shot('01-login');
 
-        await page.locator('form.login-form input[type="email"]').fill(config.email);
-        await page.locator('form.login-form input[type="password"]').fill(config.password);
-        await page.locator('form.login-form button.login-submit').click();
-
-        const loginOutcome = await waitForLoginOutcome(page, config.tenantName);
-        if (loginOutcome.outcome === 'error') {
-            throw new Error(`Login failed: ${loginOutcome.message}`);
+        if (config.authMode === 'login') {
+            await loginFounderSession(page, config, shot);
+        } else {
+            await selfBootstrapFounderSession(page, {
+                ...buildFounderSelfBootstrapIdentity(runId),
+                shot,
+            });
         }
 
-        if (loginOutcome.outcome === 'tenant') {
-            const tenantSelected = await chooseTenantIfPresent(
-                page,
-                loginOutcome.tenantLabel || config.tenantName,
-            );
-            assert.equal(
-                tenantSelected,
-                true,
-                `Expected tenant selection button "${loginOutcome.tenantLabel || config.tenantName}" to be clickable.`,
-            );
-            await shot('02-tenant-modal');
-        }
-
-        await page.waitForFunction(() => Boolean(window.localStorage.getItem('token')), null, {
-            timeout: 30000,
-        });
-        await page.waitForURL((url) => url.pathname !== '/login', { timeout: 30000 }).catch(() => {});
-
-        await page.goto(`${config.baseUrl}/founder-workspace`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto(buildFounderWorkspaceUrl(config.baseUrl), { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
         assert.notEqual(new URL(page.url()).pathname, '/login', 'Login did not create an authenticated session.');
         await shot('03-post-login');
@@ -279,9 +353,20 @@ async function main() {
         await page.getByRole('button', { name: 'Create Founder Workspace' }).click();
 
         await page.locator(`text=${scenario.workspaceName}`).first().waitFor({ state: 'visible', timeout: 30000 });
+        const workspaceUrl = new URL(page.url());
+        const createdWorkspaceId = workspaceUrl.searchParams.get('workspaceId') || '';
+        assert.match(createdWorkspaceId, /^[0-9a-f-]{8,}$/i, 'Expected founder workspace URL to include workspaceId.');
         await shot('05-workspace-created');
 
-        await choosePlanningModel(page, config.modelLabel);
+        await page.goto(buildFounderWorkspaceUrl(config.baseUrl, createdWorkspaceId), {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+        });
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+        await page.locator(`text=${scenario.workspaceName}`).first().waitFor({ state: 'visible', timeout: 30000 });
+        await shot('05b-founder-workspace-deeplink');
+
+        await choosePlanningModel(page, config.modelLabel, config.authMode);
 
         const planningTextareas = page.locator('#founder-planning-section textarea.form-input');
         await planningTextareas.nth(0).waitFor({ state: 'visible', timeout: 30000 });
@@ -312,7 +397,20 @@ async function main() {
         await page.getByRole('button', { name: 'Generate multi-agent company scaffold' }).click();
         await page.waitForURL((url) => url.pathname.endsWith('/founder-workspace/dashboard'), { timeout: 30000 });
         await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+        const dashboardUrl = new URL(page.url());
+        assert.equal(
+            dashboardUrl.searchParams.get('workspaceId'),
+            createdWorkspaceId,
+            'Expected founder dashboard URL to preserve workspaceId.',
+        );
         await shot('09-dashboard');
+
+        await page.goto(buildFounderDashboardUrl(config.baseUrl, createdWorkspaceId), {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+        });
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+        await shot('09b-dashboard-deeplink');
 
         const headline = (await page.locator('h1').first().textContent())?.trim() || '';
         const dashboardText = await page.locator('body').innerText();
@@ -348,6 +446,7 @@ async function main() {
 
         console.log(JSON.stringify({
             ok: true,
+            authMode: config.authMode,
             baseUrl: config.baseUrl,
             workspaceName: scenario.workspaceName,
             finalUrl: page.url(),
@@ -364,6 +463,7 @@ async function main() {
         await shot('error').catch(() => {});
         console.error(JSON.stringify({
             ok: false,
+            authMode: config.authMode,
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : null,
             currentUrl: page.url(),

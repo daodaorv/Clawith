@@ -4,6 +4,7 @@ import {
 } from './founderMainlineInterviewProgress.ts';
 
 export interface FounderMainlineE2eConfig {
+    authMode: 'login' | 'self_bootstrap';
     email: string;
     password: string;
     baseUrl: string;
@@ -49,12 +50,42 @@ function isHeaded(value: string | undefined): boolean {
     return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+function buildFounderUrl(baseUrl: string, pathname: string, workspaceId?: string): string {
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+    if (!workspaceId) {
+        return `${normalizedBaseUrl}${pathname}`;
+    }
+
+    const url = new URL(`${normalizedBaseUrl}${pathname}`);
+    url.searchParams.set('workspaceId', workspaceId);
+    return url.toString();
+}
+
+function resolveFounderMainlineE2eAuth(
+    env: Record<string, string | undefined>,
+): Pick<FounderMainlineE2eConfig, 'authMode' | 'email' | 'password'> {
+    const email = readOptionalEnv(env.FOUNDER_E2E_EMAIL, '');
+    const password = readOptionalEnv(env.FOUNDER_E2E_PASSWORD, '');
+
+    if (Boolean(email) !== Boolean(password)) {
+        throw new Error(
+            'FOUNDER_E2E_EMAIL and FOUNDER_E2E_PASSWORD must be provided together, or omitted together for self-bootstrap mode.',
+        );
+    }
+
+    return {
+        authMode: email ? 'login' : 'self_bootstrap',
+        email,
+        password,
+    };
+}
+
 export function buildFounderMainlineE2eConfig(
     env: Record<string, string | undefined>,
 ): FounderMainlineE2eConfig {
+    const auth = resolveFounderMainlineE2eAuth(env);
     return {
-        email: requireEnv(env.FOUNDER_E2E_EMAIL, 'FOUNDER_E2E_EMAIL'),
-        password: requireEnv(env.FOUNDER_E2E_PASSWORD, 'FOUNDER_E2E_PASSWORD'),
+        ...auth,
         baseUrl: readOptionalEnv(env.FOUNDER_E2E_BASE_URL, 'http://127.0.0.1:3010'),
         tenantName: readOptionalEnv(env.FOUNDER_E2E_TENANT, 'Solo Founder Lab'),
         modelLabel: readOptionalEnv(env.FOUNDER_E2E_MODEL_LABEL, ''),
@@ -66,6 +97,14 @@ export function buildFounderMainlineE2eConfig(
         runtimeDir: readOptionalEnv(env.FOUNDER_E2E_RUNTIME_DIR, 'openclaw-founder-e2e-runtime'),
         screenshotDir: readOptionalEnv(env.FOUNDER_E2E_SCREENSHOT_DIR, 'output/playwright'),
     };
+}
+
+export function buildFounderWorkspaceUrl(baseUrl: string, workspaceId?: string): string {
+    return buildFounderUrl(baseUrl, '/founder-workspace', workspaceId);
+}
+
+export function buildFounderDashboardUrl(baseUrl: string, workspaceId?: string): string {
+    return buildFounderUrl(baseUrl, '/founder-workspace/dashboard', workspaceId);
 }
 
 function formatRunIdForWorkspace(runId: string): string {
