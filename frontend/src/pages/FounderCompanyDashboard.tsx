@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
 import { agentApi } from '../services/api';
-import { founderWorkspaceApi } from '../services/founderWorkspace';
+import {
+    founderWorkspaceApi,
+    loadFounderActiveWorkspaceId,
+    saveFounderActiveWorkspaceId,
+} from '../services/founderWorkspace';
 import {
     buildFounderCompanyDashboardBlockers,
     hydrateFounderCompanyDashboardSnapshot,
@@ -28,7 +32,10 @@ function buildFallbackSnapshot(workspaceName?: string): FounderCompanyDashboardS
 export default function FounderCompanyDashboard() {
     const { i18n } = useTranslation();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const isChinese = i18n.language?.startsWith('zh');
+    const routeWorkspaceId = searchParams.get('workspaceId');
+    const persistedWorkspaceId = loadFounderActiveWorkspaceId();
 
     const { data: workspaces = [] } = useQuery({
         queryKey: ['founder-workspaces'],
@@ -42,7 +49,11 @@ export default function FounderCompanyDashboard() {
     });
 
     const localSnapshot = loadFounderCompanyDashboardSnapshot();
-    const currentWorkspace = resolveFounderCompanyDashboardWorkspace(workspaces, localSnapshot);
+    const currentWorkspace = resolveFounderCompanyDashboardWorkspace(workspaces, {
+        routeWorkspaceId,
+        persistedWorkspaceId,
+        localSnapshot,
+    });
     const scaffoldSnapshot = resolveFounderCompanyDashboardSnapshot(
         currentWorkspace,
         localSnapshot || buildFallbackSnapshot(currentWorkspace?.name),
@@ -55,6 +66,22 @@ export default function FounderCompanyDashboard() {
         };
     }, [currentWorkspace, runtimeAgents, scaffoldSnapshot]);
     const summary = useMemo(() => summarizeFounderCompanyDashboard(snapshot), [snapshot]);
+
+    useEffect(() => {
+        if (!currentWorkspace?.id) {
+            return;
+        }
+
+        if (persistedWorkspaceId !== currentWorkspace.id) {
+            saveFounderActiveWorkspaceId(currentWorkspace.id);
+        }
+
+        if (routeWorkspaceId !== currentWorkspace.id) {
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.set('workspaceId', currentWorkspace.id);
+            setSearchParams(nextSearchParams, { replace: true });
+        }
+    }, [currentWorkspace?.id, persistedWorkspaceId, routeWorkspaceId, searchParams, setSearchParams]);
 
     const sectionStyle: React.CSSProperties = {
         background: 'var(--bg-primary)',
@@ -90,7 +117,14 @@ export default function FounderCompanyDashboard() {
                         {isChinese ? summary.nextActionZh : summary.nextActionEn}
                     </p>
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                        <button className="btn btn-primary" onClick={() => navigate('/founder-workspace')}>
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => navigate(
+                                currentWorkspace?.id
+                                    ? `/founder-workspace?workspaceId=${encodeURIComponent(currentWorkspace.id)}`
+                                    : '/founder-workspace',
+                            )}
+                        >
                             {isChinese ? '返回 Founder Workspace' : 'Back to Founder Workspace'}
                         </button>
                         <button className="btn btn-secondary" onClick={() => navigate('/enterprise')}>

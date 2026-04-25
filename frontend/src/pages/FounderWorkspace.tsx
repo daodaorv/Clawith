@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
     buildFounderMainlinePlanningPayload,
@@ -87,10 +87,12 @@ function findWorkspaceModelId(workspace: FounderWorkspace | null, models: any[])
 export default function FounderWorkspace() {
     const { i18n } = useTranslation();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
     const isChinese = i18n.language?.startsWith('zh');
     const [preferredProvider, setPreferredProvider] = useState(() => loadFounderPreferredProvider());
     const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => loadFounderActiveWorkspaceId());
+    const routeWorkspaceId = searchParams.get('workspaceId');
 
     const [form, setForm] = useState({
         name: '',
@@ -136,8 +138,11 @@ export default function FounderWorkspace() {
 
     const currentWorkspace = resolveFounderWorkspaceSelection(
         workspaces,
-        activeWorkspaceId,
-        createMutation.data || null,
+        {
+            routeWorkspaceId,
+            persistedWorkspaceId: activeWorkspaceId,
+            fallbackWorkspace: createMutation.data || null,
+        },
     );
     const currentStep = currentWorkspace ? deriveFounderWorkspaceStep(currentWorkspace) : 'intake';
     const mutationError = createMutation.error instanceof Error ? createMutation.error.message : '';
@@ -162,11 +167,17 @@ export default function FounderWorkspace() {
             return;
         }
 
+        if (routeWorkspaceId !== currentWorkspace.id) {
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.set('workspaceId', currentWorkspace.id);
+            setSearchParams(nextSearchParams, { replace: true });
+        }
+
         if (activeWorkspaceId !== currentWorkspace.id) {
             saveFounderActiveWorkspaceId(currentWorkspace.id);
             setActiveWorkspaceId(currentWorkspace.id);
         }
-    }, [activeWorkspaceId, currentWorkspace?.id]);
+    }, [activeWorkspaceId, currentWorkspace?.id, routeWorkspaceId, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (!currentWorkspace) {
@@ -283,7 +294,7 @@ export default function FounderWorkspace() {
             );
             saveFounderCompanyDashboardSnapshot(snapshot);
             await queryClient.invalidateQueries({ queryKey: ['founder-workspaces'] });
-            navigate('/founder-workspace/dashboard');
+            navigate(`/founder-workspace/dashboard?workspaceId=${encodeURIComponent(result.workspace_id)}`);
         },
     });
 
@@ -291,6 +302,10 @@ export default function FounderWorkspace() {
         saveFounderActiveWorkspaceId(workspaceId);
         setActiveWorkspaceId(workspaceId);
         setLocalError('');
+
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.set('workspaceId', workspaceId);
+        setSearchParams(nextSearchParams, { replace: true });
     };
 
     const handleCreate = () => {
@@ -846,7 +861,7 @@ export default function FounderWorkspace() {
                                         className="btn btn-secondary"
                                         onClick={() => {
                                             selectWorkspace(currentWorkspace.id);
-                                            navigate('/founder-workspace/dashboard');
+                                            navigate(`/founder-workspace/dashboard?workspaceId=${encodeURIComponent(currentWorkspace.id)}`);
                                         }}
                                     >
                                         {isChinese ? '打开 Founder Dashboard' : 'Open Founder Dashboard'}

@@ -48,7 +48,10 @@ assert.equal(
                 materialization_status: 'not_started',
             },
         ],
-        'workspace-2',
+        {
+            routeWorkspaceId: 'workspace-2',
+            persistedWorkspaceId: 'workspace-1',
+        },
     )?.id,
     'workspace-2',
 );
@@ -69,7 +72,34 @@ assert.equal(
                 materialization_status: 'not_started',
             },
         ],
-        'missing-workspace',
+        {
+            routeWorkspaceId: 'missing-workspace',
+            persistedWorkspaceId: 'workspace-2',
+        },
+    )?.id,
+    'workspace-2',
+);
+
+assert.equal(
+    resolveFounderWorkspaceSelection(
+        [
+            {
+                id: 'workspace-1',
+                current_state: 'planning',
+                latest_plan: { plan_status: 'interview_in_progress' },
+                materialization_status: 'not_started',
+            },
+            {
+                id: 'workspace-2',
+                current_state: 'planning',
+                latest_plan: { plan_status: 'ready_for_deploy_prep' },
+                materialization_status: 'not_started',
+            },
+        ],
+        {
+            routeWorkspaceId: 'missing-workspace',
+            persistedWorkspaceId: 'missing-too',
+        },
     )?.id,
     'workspace-1',
 );

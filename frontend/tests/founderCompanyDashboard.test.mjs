@@ -48,12 +48,50 @@ assert.equal(
             },
         ],
         {
-            workspaceId: 'workspace-2',
-            companyName: 'Current Workspace',
-            agents: [],
-            blockers: [],
-            relationshipCount: 0,
-            triggerCount: 0,
+            routeWorkspaceId: 'workspace-2',
+            persistedWorkspaceId: 'workspace-1',
+            localSnapshot: {
+                workspaceId: 'workspace-1',
+                companyName: 'Old Workspace',
+                agents: [],
+                blockers: [],
+                relationshipCount: 0,
+                triggerCount: 0,
+            },
+        },
+    )?.id,
+    'workspace-2',
+);
+
+assert.equal(
+    resolveFounderCompanyDashboardWorkspace(
+        [
+            {
+                id: 'workspace-1',
+                name: 'Old Workspace',
+                current_state: 'materialized',
+                materialization_status: 'completed',
+                latest_plan: { plan_status: 'ready_for_deploy_prep' },
+            },
+            {
+                id: 'workspace-2',
+                name: 'Current Workspace',
+                current_state: 'materialized',
+                materialization_status: 'completed',
+                latest_plan: { plan_status: 'ready_for_deploy_prep' },
+            },
+        ],
+        {
+            routeWorkspaceId: 'missing-workspace',
+            persistedWorkspaceId: 'workspace-1',
+            localSnapshot: {
+                workspaceId: 'workspace-2',
+                companyName: 'Current Workspace',
+                agents: [],
+                blockers: [],
+                relationshipCount: 0,
+                triggerCount: 0,
+            },
         },
     )?.id,
     'workspace-2',

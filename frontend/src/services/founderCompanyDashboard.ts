@@ -1,7 +1,4 @@
-import {
-    loadFounderActiveWorkspaceId,
-    resolveFounderWorkspaceSelection,
-} from './founderWorkspace.ts';
+import { resolveFounderWorkspaceSelection } from './founderWorkspace.ts';
 
 export interface FounderCompanyDashboardAgent {
     id?: string;
@@ -53,6 +50,11 @@ export interface FounderCompanyDashboardWorkspaceLike {
 }
 
 export const FOUNDER_COMPANY_DASHBOARD_SNAPSHOT_KEY = 'founder_company_dashboard_snapshot';
+export interface FounderCompanyDashboardWorkspaceSelectionOptions {
+    routeWorkspaceId?: string | null;
+    persistedWorkspaceId?: string | null;
+    localSnapshot?: FounderCompanyDashboardSnapshot | null;
+}
 
 const ACTIVE_AGENT_STATUSES = new Set(['active', 'running', 'idle']);
 const PAUSED_AGENT_STATUSES = new Set(['paused', 'stopped']);
@@ -96,11 +98,14 @@ export function summarizeFounderCompanyDashboard(
 
 export function resolveFounderCompanyDashboardWorkspace<T extends FounderCompanyDashboardWorkspaceLike & { id: string }>(
     workspaces: T[] = [],
-    localSnapshot: FounderCompanyDashboardSnapshot | null = null,
+    options: FounderCompanyDashboardWorkspaceSelectionOptions = {},
 ): T | null {
     return resolveFounderWorkspaceSelection(
         workspaces,
-        localSnapshot?.workspaceId || loadFounderActiveWorkspaceId(),
+        {
+            routeWorkspaceId: options.routeWorkspaceId,
+            persistedWorkspaceId: options.localSnapshot?.workspaceId || options.persistedWorkspaceId,
+        },
     );
 }
 

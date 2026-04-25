@@ -82,6 +82,11 @@ export type FounderWorkspaceDraftPlanRequest = FounderMainlineDraftPlanRequest;
 
 export type FounderWorkspaceStep = 'intake' | 'review' | 'dashboard';
 export const FOUNDER_ACTIVE_WORKSPACE_KEY = 'founder_active_workspace_id';
+export interface FounderWorkspaceSelectionOptions<T extends { id: string }> {
+    routeWorkspaceId?: string | null;
+    persistedWorkspaceId?: string | null;
+    fallbackWorkspace?: T | null;
+}
 
 async function requestFounderWorkspace<T>(url: string, options: RequestInit = {}): Promise<T> {
     const token = localStorage.getItem('token');
@@ -131,17 +136,25 @@ export function deriveFounderWorkspaceStep(workspace: Pick<
 
 export function resolveFounderWorkspaceSelection<T extends { id: string }>(
     workspaces: T[] = [],
-    preferredWorkspaceId?: string | null,
-    fallbackWorkspace: T | null = null,
+    options: FounderWorkspaceSelectionOptions<T> = {},
 ): T | null {
-    if (preferredWorkspaceId) {
-        const matchedWorkspace = workspaces.find((workspace) => workspace.id === preferredWorkspaceId);
+    const candidateIds = [
+        options.routeWorkspaceId,
+        options.persistedWorkspaceId,
+    ];
+
+    for (const workspaceId of candidateIds) {
+        if (!workspaceId) {
+            continue;
+        }
+
+        const matchedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
         if (matchedWorkspace) {
             return matchedWorkspace;
         }
     }
 
-    return workspaces[0] || fallbackWorkspace;
+    return workspaces[0] || options.fallbackWorkspace || null;
 }
 
 export function loadFounderActiveWorkspaceId(): string {
