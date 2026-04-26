@@ -79,14 +79,10 @@ The same command is wired into:
 
 - `.github/workflows/founder-release-readiness.yml`
 
-Founder browser automation is now repo-versioned and runnable through:
+Founder browser automation is now repo-versioned and runnable through a self-bootstrapping default path:
 
 ```bash
 cd frontend
-FOUNDER_E2E_EMAIL=<seeded-user-email> \
-FOUNDER_E2E_PASSWORD=<seeded-user-password> \
-FOUNDER_E2E_BASE_URL=http://127.0.0.1:3010 \
-FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
 ```
 
@@ -94,7 +90,8 @@ Notes about the browser runner:
 
 - It installs `playwright-core@1.59.1` into a temporary runtime directory on demand instead of adding Playwright to repo dependencies.
 - It launches the system Microsoft Edge executable and writes screenshots to `output/playwright/`.
-- It covers `login -> tenant select (when required) -> founder workspace create -> planning interview -> draft -> confirm -> materialize -> founder dashboard assertions`.
+- With no `FOUNDER_E2E_*` credentials it self-bootstraps a disposable founder account, creates a disposable company, seeds a tenant-scoped dummy model when needed, and then runs the founder mainline flow.
+- With explicit `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD` values it reuses an existing model-ready founder tenant and still covers `login -> tenant select (when required) -> founder workspace create -> planning interview -> draft -> confirm -> materialize -> founder dashboard assertions`.
 
 ## Real UI / API Mainline Verification
 
@@ -157,10 +154,10 @@ Screenshot artifacts:
 
 - The dashboard currently counts `idle` agents as active. This is intentional in the current implementation and is why the headline reports four active agents.
 - The local test tenant still contains older hand-injected agent records from earlier dashboard experiments. The current dashboard path stays correct because it hydrates live status against the snapshot's stored `agent.id` values instead of matching only by name.
-- The deterministic founder release-readiness lane is now wired into CI, but the live founder E2E runner still depends on a live frontend/backend environment, a seeded multi-tenant test account, and a local Microsoft Edge install. That live browser gate remains manual.
+- The deterministic founder release-readiness lane is now wired into CI, but the live founder E2E runner still depends on a live frontend/backend environment and a local Microsoft Edge install. The new self-bootstrap path removes the seeded multi-tenant test-account requirement, but the live browser gate is still environment-dependent.
 
 ## Recommended Follow-up
 
-- Promote `npm run test:e2e:founder` into an optional CI job only after a stable seeded test account and browser/runtime strategy is in place.
+- Promote `npm run test:e2e:founder` into an optional CI job once a stable browser/runtime strategy is in place for live environments.
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

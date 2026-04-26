@@ -244,7 +244,21 @@ cd backend
 python -m app.scripts.founder_release_readiness
 ```
 
-If you want to run the automated founder browser check:
+If you want to run the automated founder browser check against a fresh self-bootstrapped company:
+
+```bash
+cd frontend
+npm run test:e2e:founder
+```
+
+That default path now:
+
+- registers a disposable founder account
+- creates a disposable company
+- seeds a tenant-scoped dummy LLM model when the new company has none
+- runs the full founder flow through dashboard assertions
+
+If you want to target an existing model-ready founder tenant instead, provide explicit credentials:
 
 ```bash
 cd frontend
@@ -255,7 +269,7 @@ FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
 ```
 
-If those browser credentials are already exported in your shell, you can append the live gate to the deterministic lane from the backend directory:
+You can append the live gate to the deterministic lane from the backend directory without exporting any founder credentials:
 
 ```bash
 cd backend

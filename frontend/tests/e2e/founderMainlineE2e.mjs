@@ -14,6 +14,17 @@ import {
 } from '../../src/services/founderMainlineE2e.ts';
 
 const PLAYWRIGHT_CORE_VERSION = '1.59.1';
+const SELF_BOOTSTRAP_MODEL_PAYLOAD = {
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    api_key: 'openclaw-founder-e2e-dummy-key',
+    base_url: 'https://example.com/v1',
+    label: 'Dummy Founder Self-Bootstrap Model',
+    enabled: true,
+    supports_vision: false,
+    max_output_tokens: 4096,
+    request_timeout: 120,
+};
 const require = createRequire(import.meta.url);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../../..');
@@ -213,6 +224,54 @@ async function waitForLoginOutcome(page, tenantName, timeout = 30000) {
     return result;
 }
 
+async function ensureSelfBootstrapModel(page) {
+    return page.evaluate(async (payload) => {
+        const token = window.localStorage.getItem('token') || '';
+        if (!token) {
+            throw new Error('Missing auth token while bootstrapping the founder model.');
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+        };
+        const listResponse = await fetch('/api/enterprise/llm-models', { headers });
+        const listText = await listResponse.text();
+        if (!listResponse.ok) {
+            throw new Error(`Failed to list tenant LLM models: ${listResponse.status} ${listText}`);
+        }
+
+        const existingModels = listText ? JSON.parse(listText) : [];
+        const enabledModels = Array.isArray(existingModels)
+            ? existingModels.filter((item) => item && item.enabled !== false)
+            : [];
+        if (enabledModels.length > 0) {
+            return {
+                created: false,
+                modelId: String(enabledModels[0]?.id || ''),
+                label: String(enabledModels[0]?.label || ''),
+            };
+        }
+
+        const createResponse = await fetch('/api/enterprise/llm-models', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+        });
+        const createText = await createResponse.text();
+        if (!createResponse.ok) {
+            throw new Error(`Failed to create self-bootstrap LLM model: ${createResponse.status} ${createText}`);
+        }
+
+        const createdModel = createText ? JSON.parse(createText) : {};
+        return {
+            created: true,
+            modelId: String(createdModel?.id || ''),
+            label: String(createdModel?.label || payload.label || ''),
+        };
+    }, SELF_BOOTSTRAP_MODEL_PAYLOAD);
+}
+
 async function loginFounderSession(page, config, shot) {
     await page.locator('form.login-form input[type="email"]').fill(config.email);
     await page.locator('form.login-form input[type="password"]').fill(config.password);
@@ -278,6 +337,10 @@ async function selfBootstrapFounderSession(page, { email, password, companyName,
         }
     }
 
+    const modelSeedResult = await ensureSelfBootstrapModel(page);
+    if (modelSeedResult.created) {
+        await shot('02d-self-bootstrap-model-seeded');
+    }
     await shot('02d-self-bootstrap-ready');
 }
 
