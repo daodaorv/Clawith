@@ -244,7 +244,21 @@ cd backend
 python -m app.scripts.founder_release_readiness
 ```
 
-如果要执行自动化 founder 浏览器回归：
+如果要针对一条全新的自举公司链路执行自动化 founder 浏览器回归：
+
+```bash
+cd frontend
+npm run test:e2e:founder
+```
+
+这条默认路径现在会自动：
+
+- 注册一次性的 founder 测试账号
+- 创建一次性的公司
+- 当新公司还没有可用模型时，为该 tenant 注入一个验证用 dummy LLM model
+- 继续跑完整 founder 主链路直到 dashboard 断言
+
+如果你想复用一个已经配置好模型的 founder tenant，再显式提供凭据：
 
 ```bash
 cd frontend
@@ -255,7 +269,7 @@ FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
 ```
 
-如果这些浏览器 E2E 环境变量已经提前导出，也可以在 `backend` 目录下直接把 live 门禁追加到确定性链路后面：
+现在即使没有提前导出这些浏览器 E2E 环境变量，也可以在 `backend` 目录下直接把 live 门禁追加到确定性链路后面：
 
 ```bash
 cd backend

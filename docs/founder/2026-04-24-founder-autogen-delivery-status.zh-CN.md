@@ -79,14 +79,10 @@ python -m app.scripts.founder_release_readiness
 
 - `.github/workflows/founder-release-readiness.yml`
 
-Founder 浏览器自动化现已纳入仓库，可通过以下命令运行：
+Founder 浏览器自动化现已纳入仓库，默认可通过自举路径直接运行：
 
 ```bash
 cd frontend
-FOUNDER_E2E_EMAIL=<测试账号邮箱> \
-FOUNDER_E2E_PASSWORD=<测试账号密码> \
-FOUNDER_E2E_BASE_URL=http://127.0.0.1:3010 \
-FOUNDER_E2E_TENANT="Solo Founder Lab (solo-founder-lab-3cf969)" \
 npm run test:e2e:founder
 ```
 
@@ -94,7 +90,8 @@ npm run test:e2e:founder
 
 - 按需把 `playwright-core@1.59.1` 安装到临时 runtime 目录，不新增仓库依赖。
 - 直接调用本机 Microsoft Edge，并把截图输出到 `output/playwright/`。
-- 覆盖 `登录 -> 多租户选择（如需要） -> 创建 founder workspace -> 访谈 -> draft -> 确认 -> materialize -> founder dashboard 断言`。
+- 如果没有显式提供 `FOUNDER_E2E_*` 凭据，它会自动注册一次性 founder 账号、创建一次性公司、在需要时为该 tenant 注入一个验证用 dummy model，然后继续跑完整 founder 主链路。
+- 如果显式提供 `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD`，它会复用一个已经准备好模型的 founder tenant，并继续覆盖 `登录 -> 多租户选择（如需要） -> 创建 founder workspace -> 访谈 -> draft -> 确认 -> materialize -> founder dashboard 断言`。
 
 ## 真实 UI / API 主链路验证
 
@@ -157,10 +154,10 @@ Dashboard 上确认出现的 4 个 agent：
 
 - 现在 dashboard 会把 `idle` 也计入 active，这是当前实现的预期，因此 headline 显示 4 个 active agents 是正常结果。
 - 本地测试租户里仍保留了更早期手工注入的旧 agent 数据；当前 dashboard 之所以没有混淆，是因为它按 snapshot 中存储的 `agent.id` 去 hydrate 实时状态，而不是只按名称匹配。
-- Founder 的确定性 release-readiness 链路已经接入 CI，但 live E2E 仍依赖真实前后端环境、预置多租户测试账号以及本机 Microsoft Edge，所以这条浏览器门禁目前仍然保留为手工执行。
+- Founder 的确定性 release-readiness 链路已经接入 CI，但 live E2E 仍依赖真实前后端环境和本机 Microsoft Edge。新的 self-bootstrap 路径已经去掉了“预置多租户测试账号”这条前置条件，不过这条浏览器门禁仍然依赖真实运行环境。
 
 ## 建议的下一步
 
-- 在测试账号和浏览器运行策略稳定后，再把 `npm run test:e2e:founder` 提升为可选 CI 作业。
+- 在浏览器运行策略稳定后，再把 `npm run test:e2e:founder` 提升为可选 CI 作业。
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。
