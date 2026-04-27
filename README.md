@@ -135,7 +135,14 @@ cd backend
 python -m app.scripts.founder_release_readiness
 ```
 
-The same lane now runs in GitHub Actions through `.github/workflows/founder-release-readiness.yml`. Live founder browser E2E remains an explicit manual gate because it still depends on a seeded account, a running environment, and a local Edge-compatible browser.
+If you want the live founder browser gate as well, you can now run it without pre-seeding any founder account:
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness --include-live-e2e
+```
+
+The same deterministic lane runs in GitHub Actions through `.github/workflows/founder-release-readiness.yml`. The live founder browser E2E path is still environment-dependent because it requires a real running frontend/backend chain and a local Edge-compatible browser, but it no longer requires a pre-seeded multi-tenant founder account.
 
 ### Docker
 

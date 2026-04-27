@@ -130,7 +130,14 @@ cd backend
 python -m app.scripts.founder_release_readiness
 ```
 
-同一条检查链路现在也已经接入 `.github/workflows/founder-release-readiness.yml`。依赖真实账号、运行环境和本机 Edge 兼容浏览器的 founder live E2E 仍然保留为显式手工门禁，没有强行塞进 CI。
+如果你还想把 live founder 浏览器门禁一起跑掉，现在也不需要再预置 founder 测试账号：
+
+```bash
+cd backend
+python -m app.scripts.founder_release_readiness --include-live-e2e
+```
+
+同一条确定性检查链路现在也已经接入 `.github/workflows/founder-release-readiness.yml`。Founder live E2E 仍然依赖真实运行中的前后端链路和本机 Edge 兼容浏览器，所以没有强行塞进 CI；但它已经不再要求预置多租户 founder 测试账号。
 
 ### Docker 部署
 
