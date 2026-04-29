@@ -139,6 +139,8 @@ python -m app.scripts.founder_release_readiness --include-live-e2e
 
 同一条确定性检查链路现在也已经接入 `.github/workflows/founder-release-readiness.yml`。Founder live E2E 仍然依赖真实运行中的前后端链路和本机 Edge 兼容浏览器，所以没有强行塞进 CI；但它已经不再要求预置多租户 founder 测试账号。
 
+self-bootstrap 这条 live E2E 路径现在还会在断言结束后自动清理一次性账号、公司、workspace、agents 和 dummy model。只有在你确实想保留这些产物做排查时，才需要设置 `FOUNDER_E2E_SKIP_CLEANUP=1`。
+
 ### Docker 部署
 
 ```bash

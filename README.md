@@ -144,6 +144,8 @@ python -m app.scripts.founder_release_readiness --include-live-e2e
 
 The same deterministic lane runs in GitHub Actions through `.github/workflows/founder-release-readiness.yml`. The live founder browser E2E path is still environment-dependent because it requires a real running frontend/backend chain and a local Edge-compatible browser, but it no longer requires a pre-seeded multi-tenant founder account.
 
+The self-bootstrap live E2E path now also cleans up the disposable account, company, workspace, agents, and dummy model after the assertions finish. Set `FOUNDER_E2E_SKIP_CLEANUP=1` only when you intentionally want to keep those artifacts for debugging.
+
 ### Docker
 
 ```bash

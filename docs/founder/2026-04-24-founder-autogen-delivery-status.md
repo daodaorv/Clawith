@@ -91,7 +91,9 @@ Notes about the browser runner:
 - It installs `playwright-core@1.59.1` into a temporary runtime directory on demand instead of adding Playwright to repo dependencies.
 - It launches the system Microsoft Edge executable and writes screenshots to `output/playwright/`.
 - With no `FOUNDER_E2E_*` credentials it self-bootstraps a disposable founder account, creates a disposable company, seeds a tenant-scoped dummy model when needed, and then runs the founder mainline flow.
+- That self-bootstrap default now also deletes the disposable account, company, workspace, agents, and dummy model at the end of the run so the local database stays clean.
 - With explicit `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD` values it reuses an existing model-ready founder tenant and still covers `login -> tenant select (when required) -> founder workspace create -> planning interview -> draft -> confirm -> materialize -> founder dashboard assertions`.
+- Set `FOUNDER_E2E_SKIP_CLEANUP=1` only when you intentionally want to keep the generated self-bootstrap artifacts for debugging.
 
 ## Real UI / API Mainline Verification
 
@@ -160,4 +162,5 @@ Screenshot artifacts:
 
 - Promote `npm run test:e2e:founder` into an optional CI job once a stable browser/runtime strategy is in place for live environments.
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
+- Use `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` if an interrupted or pre-fix self-bootstrap run leaves disposable founder E2E artifacts behind.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

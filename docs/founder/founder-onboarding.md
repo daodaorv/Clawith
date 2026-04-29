@@ -257,6 +257,13 @@ That default path now:
 - creates a disposable company
 - seeds a tenant-scoped dummy LLM model when the new company has none
 - runs the full founder flow through dashboard assertions
+- cleans up the disposable account, company, workspace, agents, and dummy model after the assertions finish
+
+If you want to keep the generated self-bootstrap artifacts for debugging, add:
+
+```bash
+FOUNDER_E2E_SKIP_CLEANUP=1
+```
 
 If you want to target an existing model-ready founder tenant instead, provide explicit credentials:
 

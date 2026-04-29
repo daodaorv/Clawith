@@ -18,6 +18,15 @@ from app.core.security import get_current_user, require_role, get_authenticated_
 from app.database import get_db
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.services.founder_self_bootstrap_cleanup import (
+    cleanup_founder_self_bootstrap_targets,
+    is_self_bootstrap_cleanup_target,
+    is_self_bootstrap_identity_email,
+    is_self_bootstrap_tenant_name,
+    load_founder_self_bootstrap_cleanup_targets_for_identity,
+    load_founder_self_bootstrap_cleanup_targets_for_tenant,
+    load_founder_self_bootstrap_identity,
+)
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
@@ -69,6 +78,33 @@ class SelfCreateResponse(BaseModel):
     """Response for self-create company, includes token for context switching."""
     tenant: TenantOut
     access_token: str | None = None  # Non-null when a new User record was created (multi-tenant switch)
+
+
+class SelfBootstrapCleanupRequest(BaseModel):
+    confirm: bool = False
+
+
+class SelfBootstrapCleanupResponse(BaseModel):
+    ok: bool
+    executed: bool
+    tenant_name: str | None = None
+    tenant_slug: str | None = None
+    identity_emails: list[str] = Field(default_factory=list)
+    identity_count: int = 0
+    user_count: int = 0
+    founder_workspace_count: int = 0
+    founder_workspace_names: list[str] = Field(default_factory=list)
+    agent_count: int = 0
+    agent_names: list[str] = Field(default_factory=list)
+    llm_model_count: int = 0
+    llm_model_labels: list[str] = Field(default_factory=list)
+    deleted_agent_count: int = 0
+    deleted_founder_workspace_count: int = 0
+    deleted_llm_model_count: int = 0
+    deleted_user_count: int = 0
+    deleted_identity_count: int = 0
+    deleted_tenant_count: int = 0
+    errors: list[str] = Field(default_factory=list)
 
 
 @router.post("/self-create", response_model=SelfCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -154,6 +190,47 @@ async def self_create_company(
 
 
 # ─── Self-Service: Join Company via Invite Code ─────────
+
+@router.post("/self-bootstrap-cleanup", response_model=SelfBootstrapCleanupResponse)
+async def cleanup_self_bootstrap_company(
+    payload: SelfBootstrapCleanupRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete disposable founder self-bootstrap E2E artifacts for the authenticated session."""
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true is required for self-bootstrap cleanup")
+
+    identity = await load_founder_self_bootstrap_identity(db, identity_id=current_user.identity_id)
+    if identity is None:
+        raise HTTPException(status_code=404, detail="Identity not found for current user")
+
+    if current_user.tenant_id is None:
+        if not is_self_bootstrap_identity_email(identity.email):
+            raise HTTPException(status_code=403, detail="This account is not a disposable founder self-bootstrap identity")
+        targets = await load_founder_self_bootstrap_cleanup_targets_for_identity(db, identity=identity)
+    else:
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        if tenant is None:
+            raise HTTPException(status_code=404, detail="Tenant not found for current user")
+        if not (is_self_bootstrap_identity_email(identity.email) and is_self_bootstrap_tenant_name(tenant.name)):
+            raise HTTPException(status_code=403, detail="This tenant is not a disposable founder self-bootstrap company")
+        targets = await load_founder_self_bootstrap_cleanup_targets_for_tenant(db, tenant=tenant)
+
+    if not is_self_bootstrap_cleanup_target(targets):
+        raise HTTPException(status_code=403, detail="Self-bootstrap cleanup targets do not match the disposable E2E contract")
+
+    result = await cleanup_founder_self_bootstrap_targets(
+        db,
+        targets=targets,
+        execute=True,
+        reason="founder self-bootstrap e2e cleanup",
+    )
+    if not result["ok"]:
+        raise HTTPException(status_code=500, detail=result)
+    return result
+
 
 class JoinRequest(BaseModel):
     invitation_code: str = Field(min_length=1, max_length=32)

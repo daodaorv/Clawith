@@ -272,6 +272,29 @@ async function ensureSelfBootstrapModel(page) {
     }, SELF_BOOTSTRAP_MODEL_PAYLOAD);
 }
 
+async function cleanupSelfBootstrapArtifacts(page) {
+    return page.evaluate(async () => {
+        const token = window.localStorage.getItem('token') || '';
+        if (!token) {
+            throw new Error('Missing auth token before founder self-bootstrap cleanup.');
+        }
+
+        const response = await fetch('/api/tenants/self-bootstrap-cleanup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ confirm: true }),
+        });
+        const bodyText = await response.text();
+        if (!response.ok) {
+            throw new Error(`Founder self-bootstrap cleanup failed: ${response.status} ${bodyText}`);
+        }
+        return bodyText ? JSON.parse(bodyText) : { ok: true };
+    });
+}
+
 async function loginFounderSession(page, config, shot) {
     await page.locator('form.login-form input[type="email"]').fill(config.email);
     await page.locator('form.login-form input[type="password"]').fill(config.password);
@@ -388,6 +411,10 @@ async function main() {
             fullPage: true,
         });
     }
+
+    let successPayload = null;
+    let primaryError = null;
+    let cleanupSummary = null;
 
     try {
         await page.goto(`${config.baseUrl}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -507,7 +534,7 @@ async function main() {
             `Expected at least ${scenario.minimumTriggerCount} starter triggers but found ${triggerCount}.`,
         );
 
-        console.log(JSON.stringify({
+        successPayload = {
             ok: true,
             authMode: config.authMode,
             baseUrl: config.baseUrl,
@@ -521,8 +548,9 @@ async function main() {
             requestFailures,
             consoleMessages: consoleMessages.slice(-20),
             screenshotsPrefix: path.join(screenshotDir, `${runId}-*.png`),
-        }, null, 2));
+        };
     } catch (error) {
+        primaryError = error;
         await shot('error').catch(() => {});
         console.error(JSON.stringify({
             ok: false,
@@ -534,11 +562,39 @@ async function main() {
             consoleMessages: consoleMessages.slice(-40),
             screenshotsPrefix: path.join(screenshotDir, `${runId}-*.png`),
         }, null, 2));
-        process.exitCode = 1;
     } finally {
+        if (config.cleanupAfterRun) {
+            const hasToken = await page.evaluate(() => Boolean(window.localStorage.getItem('token'))).catch(() => false);
+            if (hasToken) {
+                try {
+                    cleanupSummary = await cleanupSelfBootstrapArtifacts(page);
+                } catch (error) {
+                    if (primaryError === null) {
+                        primaryError = error;
+                    } else {
+                        console.error(
+                            `Founder self-bootstrap cleanup also failed: ${error instanceof Error ? error.message : String(error)}`,
+                        );
+                    }
+                }
+            }
+        }
         await context.close();
         await browser.close();
     }
+
+    if (primaryError) {
+        if (successPayload !== null) {
+            console.error(primaryError instanceof Error ? primaryError.stack || primaryError.message : String(primaryError));
+        }
+        process.exitCode = 1;
+        return;
+    }
+
+    console.log(JSON.stringify({
+        ...successPayload,
+        cleanupSummary,
+    }, null, 2));
 }
 
 main().catch((error) => {

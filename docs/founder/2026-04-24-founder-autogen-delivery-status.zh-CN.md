@@ -91,7 +91,9 @@ npm run test:e2e:founder
 - 按需把 `playwright-core@1.59.1` 安装到临时 runtime 目录，不新增仓库依赖。
 - 直接调用本机 Microsoft Edge，并把截图输出到 `output/playwright/`。
 - 如果没有显式提供 `FOUNDER_E2E_*` 凭据，它会自动注册一次性 founder 账号、创建一次性公司、在需要时为该 tenant 注入一个验证用 dummy model，然后继续跑完整 founder 主链路。
+- 这条 self-bootstrap 默认路径现在还会在断言完成后自动删除一次性账号、公司、workspace、agents 和 dummy model，避免本地数据库持续堆积脏数据。
 - 如果显式提供 `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD`，它会复用一个已经准备好模型的 founder tenant，并继续覆盖 `登录 -> 多租户选择（如需要） -> 创建 founder workspace -> 访谈 -> draft -> 确认 -> materialize -> founder dashboard 断言`。
+- 只有在你确实想保留这批自举产物用于排查时，才需要设置 `FOUNDER_E2E_SKIP_CLEANUP=1`。
 
 ## 真实 UI / API 主链路验证
 
@@ -160,4 +162,5 @@ Dashboard 上确认出现的 4 个 agent：
 
 - 在浏览器运行策略稳定后，再把 `npm run test:e2e:founder` 提升为可选 CI 作业。
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
+- 如果某次中断或修复前的 self-bootstrap 运行留下了一次性 founder E2E 脏数据，可以执行 `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` 做补扫。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。

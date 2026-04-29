@@ -5,6 +5,7 @@ import {
 
 export interface FounderMainlineE2eConfig {
     authMode: 'login' | 'self_bootstrap';
+    cleanupAfterRun: boolean;
     email: string;
     password: string;
     baseUrl: string;
@@ -50,6 +51,11 @@ function isHeaded(value: string | undefined): boolean {
     return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
+function isTruthy(value: string | undefined): boolean {
+    const normalized = value?.trim().toLowerCase() || '';
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
 function buildFounderUrl(baseUrl: string, pathname: string, workspaceId?: string): string {
     const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
     if (!workspaceId) {
@@ -63,7 +69,7 @@ function buildFounderUrl(baseUrl: string, pathname: string, workspaceId?: string
 
 function resolveFounderMainlineE2eAuth(
     env: Record<string, string | undefined>,
-): Pick<FounderMainlineE2eConfig, 'authMode' | 'email' | 'password'> {
+): Pick<FounderMainlineE2eConfig, 'authMode' | 'cleanupAfterRun' | 'email' | 'password'> {
     const email = readOptionalEnv(env.FOUNDER_E2E_EMAIL, '');
     const password = readOptionalEnv(env.FOUNDER_E2E_PASSWORD, '');
 
@@ -75,6 +81,7 @@ function resolveFounderMainlineE2eAuth(
 
     return {
         authMode: email ? 'login' : 'self_bootstrap',
+        cleanupAfterRun: !email && !isTruthy(env.FOUNDER_E2E_SKIP_CLEANUP),
         email,
         password,
     };

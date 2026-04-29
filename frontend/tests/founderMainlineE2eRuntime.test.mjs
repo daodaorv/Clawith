@@ -19,6 +19,7 @@ assert.equal(config.baseUrl, 'http://127.0.0.1:3010');
 assert.equal(config.tenantName, 'Solo Founder Lab');
 assert.equal(config.edgePath, 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe');
 assert.equal(config.headless, true);
+assert.equal(config.cleanupAfterRun, false);
 assert.equal(config.modelLabel, '');
 assert.match(config.runtimeDir, /openclaw-founder-e2e-runtime/i);
 assert.match(config.screenshotDir, /output[\\/]playwright$/i);
@@ -41,6 +42,11 @@ assert.equal(selfBootstrapConfig.authMode, 'self_bootstrap');
 assert.equal(selfBootstrapConfig.email, '');
 assert.equal(selfBootstrapConfig.password, '');
 assert.equal(selfBootstrapConfig.baseUrl, 'http://127.0.0.1:3010');
+assert.equal(selfBootstrapConfig.cleanupAfterRun, true);
+
+const selfBootstrapNoCleanupConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SKIP_CLEANUP: '1' });
+assert.equal(selfBootstrapNoCleanupConfig.authMode, 'self_bootstrap');
+assert.equal(selfBootstrapNoCleanupConfig.cleanupAfterRun, false);
 
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_EMAIL: 'founder@example.com' }), /provided together/);
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_PASSWORD: 'OpenClaw!12345' }), /provided together/);

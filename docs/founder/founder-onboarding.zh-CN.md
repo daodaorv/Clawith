@@ -257,6 +257,13 @@ npm run test:e2e:founder
 - 创建一次性的公司
 - 当新公司还没有可用模型时，为该 tenant 注入一个验证用 dummy LLM model
 - 继续跑完整 founder 主链路直到 dashboard 断言
+- 在断言结束后自动清理一次性账号、公司、workspace、agents 和 dummy model
+
+如果你想为了排查问题而保留这批自举产物，可以额外加上：
+
+```bash
+FOUNDER_E2E_SKIP_CLEANUP=1
+```
 
 如果你想复用一个已经配置好模型的 founder tenant，再显式提供凭据：
 
