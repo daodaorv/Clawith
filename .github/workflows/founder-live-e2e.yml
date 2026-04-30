@@ -1,0 +1,69 @@
+name: Founder Live E2E (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Founder frontend base URL reachable from the GitHub runner, for example https://founder-staging.example.com"
+        required: true
+        type: string
+      edge_path:
+        description: "Microsoft Edge executable path on the runner"
+        required: false
+        default: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        type: string
+      headed:
+        description: "Run with a visible browser window for debugging"
+        required: false
+        default: false
+        type: boolean
+      skip_cleanup:
+        description: "Keep self-bootstrap artifacts after the run for debugging"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: founder-live-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  founder-live-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run founder live E2E
+        working-directory: frontend
+        env:
+          FOUNDER_E2E_BASE_URL: ${{ inputs.base_url }}
+          FOUNDER_E2E_EDGE_PATH: ${{ inputs.edge_path }}
+          FOUNDER_E2E_HEADED: ${{ inputs.headed && '1' || '0' }}
+          FOUNDER_E2E_SKIP_CLEANUP: ${{ inputs.skip_cleanup && '1' || '' }}
+          FOUNDER_E2E_EMAIL: ${{ secrets.FOUNDER_E2E_EMAIL }}
+          FOUNDER_E2E_PASSWORD: ${{ secrets.FOUNDER_E2E_PASSWORD }}
+          FOUNDER_E2E_TENANT: ${{ secrets.FOUNDER_E2E_TENANT }}
+          FOUNDER_E2E_MODEL_LABEL: ${{ secrets.FOUNDER_E2E_MODEL_LABEL }}
+        run: npm run test:e2e:founder
+
+      - name: Upload founder E2E screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: founder-live-e2e-screenshots
+          path: output/playwright/*.png
+          if-no-files-found: ignore

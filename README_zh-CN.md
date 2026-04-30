@@ -141,6 +141,8 @@ python -m app.scripts.founder_release_readiness --include-live-e2e
 
 self-bootstrap 这条 live E2E 路径现在还会在断言结束后自动清理一次性账号、公司、workspace、agents 和 dummy model。只有在你确实想保留这些产物做排查时，才需要设置 `FOUNDER_E2E_SKIP_CLEANUP=1`。
 
+如果需要手动触发 live 门禁，可以使用 `.github/workflows/founder-live-e2e.yml`。它不会在 push 或 pull request 上自动运行；触发时需要填写一个 GitHub runner 可访问的 `base_url`。如果仓库没有配置 `FOUNDER_E2E_EMAIL` 和 `FOUNDER_E2E_PASSWORD` secrets，它会走 self-bootstrap 路径并默认清理产物；如果配置了这些 secrets，则会复用指定 founder tenant。
+
 ### Docker 部署
 
 ```bash

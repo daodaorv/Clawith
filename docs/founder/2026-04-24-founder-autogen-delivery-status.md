@@ -16,6 +16,7 @@ This closes the main implementation plan tracked in:
 Latest status refresh:
 
 - 2026-04-30: the implementation plan is now repository-tracked with an execution-status section, and the self-bootstrap live E2E cleanup path has been verified against the running Docker-backed stack.
+- 2026-04-30: a manual GitHub Actions live gate is available at `.github/workflows/founder-live-e2e.yml` for reachable staging/local-tunnel environments without making push or pull-request CI brittle.
 
 Related founder docs:
 
@@ -176,6 +177,19 @@ Latest release-readiness refresh on 2026-04-30:
   - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
   - result: `No founder self-bootstrap E2E artifacts were found.`
 
+Manual GitHub Actions live gate:
+
+- Workflow: `.github/workflows/founder-live-e2e.yml`
+- Trigger: `workflow_dispatch` only
+- Required input: `base_url`, which must be reachable from the GitHub runner
+- Optional secrets:
+  - `FOUNDER_E2E_EMAIL`
+  - `FOUNDER_E2E_PASSWORD`
+  - `FOUNDER_E2E_TENANT`
+  - `FOUNDER_E2E_MODEL_LABEL`
+- If credentials are omitted, the workflow uses the self-bootstrap path and cleanup remains enabled unless the manual `skip_cleanup` input is set.
+- Screenshots are uploaded as the `founder-live-e2e-screenshots` artifact.
+
 Screenshot artifacts:
 
 - `output/playwright/2026-04-24T13-10-15-461Z-*.png`
@@ -192,7 +206,7 @@ Screenshot artifacts:
 
 ## Recommended Follow-up
 
-- Promote `npm run test:e2e:founder` into an optional CI job once a stable browser/runtime strategy is in place for live environments.
+- Use the manual `Founder Live E2E (Manual)` workflow against a reachable staging or tunnel URL before releases that touch founder onboarding, workspace selection, materialization, or dashboard behavior.
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Use `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` if an interrupted or pre-fix self-bootstrap run leaves disposable founder E2E artifacts behind.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.

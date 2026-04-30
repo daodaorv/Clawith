@@ -146,6 +146,8 @@ The same deterministic lane runs in GitHub Actions through `.github/workflows/fo
 
 The self-bootstrap live E2E path now also cleans up the disposable account, company, workspace, agents, and dummy model after the assertions finish. Set `FOUNDER_E2E_SKIP_CLEANUP=1` only when you intentionally want to keep those artifacts for debugging.
 
+For a manually triggered live gate, use `.github/workflows/founder-live-e2e.yml`. It does not run on push or pull requests; trigger it with a `base_url` that is reachable from the GitHub runner. Without `FOUNDER_E2E_EMAIL` and `FOUNDER_E2E_PASSWORD` repository secrets it uses the self-bootstrap path and cleanup defaults. With those secrets it reuses the configured founder tenant.
+
 ### Docker
 
 ```bash

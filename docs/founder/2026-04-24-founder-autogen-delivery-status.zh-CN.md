@@ -16,6 +16,7 @@
 最新状态刷新：
 
 - 2026-04-30：实现规划文件现在已经纳入仓库跟踪，并补充了执行状态；self-bootstrap live E2E 的自动清理链路也已经在 Docker 后端实际运行环境里验证通过。
+- 2026-04-30：新增手动 GitHub Actions live 门禁 `.github/workflows/founder-live-e2e.yml`，用于可从 GitHub runner 访问的 staging 或本地隧道环境，同时不让 push / pull request CI 变脆。
 
 相关 founder 文档：
 
@@ -176,6 +177,19 @@ Dashboard 上确认出现的 4 个 agent：
   - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
   - 结果：`No founder self-bootstrap E2E artifacts were found.`
 
+手动 GitHub Actions live 门禁：
+
+- Workflow：`.github/workflows/founder-live-e2e.yml`
+- 触发方式：仅 `workflow_dispatch`
+- 必填输入：`base_url`，必须能被 GitHub runner 访问
+- 可选 secrets：
+  - `FOUNDER_E2E_EMAIL`
+  - `FOUNDER_E2E_PASSWORD`
+  - `FOUNDER_E2E_TENANT`
+  - `FOUNDER_E2E_MODEL_LABEL`
+- 如果不提供凭据，workflow 会走 self-bootstrap 路径；除非手动勾选 `skip_cleanup`，否则默认会清理自举产物。
+- 截图会作为 `founder-live-e2e-screenshots` artifact 上传。
+
 截图产物：
 
 - `output/playwright/2026-04-24T13-10-15-461Z-*.png`
@@ -192,7 +206,7 @@ Dashboard 上确认出现的 4 个 agent：
 
 ## 建议的下一步
 
-- 在浏览器运行策略稳定后，再把 `npm run test:e2e:founder` 提升为可选 CI 作业。
+- 在触碰 founder onboarding、workspace 选择、materialization 或 dashboard 行为的发布前，用手动 `Founder Live E2E (Manual)` workflow 跑一次可访问的 staging 或 tunnel URL。
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 如果某次中断或修复前的 self-bootstrap 运行留下了一次性 founder E2E 脏数据，可以执行 `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` 做补扫。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。
