@@ -18,6 +18,7 @@ Latest status refresh:
 - 2026-04-30: the implementation plan is now repository-tracked with an execution-status section, and the self-bootstrap live E2E cleanup path has been verified against the running Docker-backed stack.
 - 2026-04-30: a manual GitHub Actions live gate is available at `.github/workflows/founder-live-e2e.yml` for reachable staging/local-tunnel environments without making push or pull-request CI brittle.
 - 2026-04-30: the founder scenario selector now detects SaaS / operations-automation briefs and generates a distinct `cn-saas-ops-automation` company scaffold instead of always falling back to the original content / knowledge-business scenario.
+- 2026-04-30: the Founder Workspace draft review now explains the selected scenario with matched signals, priority-focus chips, template preview, and skill-pack preview so non-technical founders can understand why the scaffold was generated.
 
 Related founder docs:
 
@@ -46,6 +47,7 @@ Key shipped backend change set:
 
 - `frontend/src/pages/FounderWorkspace.tsx`
   - dedicated founder workflow entry page
+  - draft review shows scenario rationale, matched signals, priority focus, template preview, and skill-pack preview before materialization
 - `frontend/src/pages/FounderCompanyDashboard.tsx`
   - founder control surface after materialization
 - `frontend/src/services/founderCompanyDashboard.ts`

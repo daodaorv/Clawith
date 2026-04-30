@@ -122,6 +122,8 @@ Clawith now includes a founder-facing flow that persists a founder workspace, ru
 
 The current Founder Autogen scenario selector supports the original content / knowledge-business scaffold plus a SaaS / operations-automation scaffold for subscription products, CRM/spreadsheet workflow replacement, onboarding, customer success, and recurring reporting.
 
+Draft review now surfaces the scenario rationale, matched signals, priority focus, template preview, and skill-pack preview before materialization so a non-technical founder can understand what the scaffold is based on.
+
 Reference docs:
 
 - [Founder implementation plan](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)

@@ -15,7 +15,7 @@ const summary = buildFounderMainlineAgentCreateSummary({
     },
     founder_copilot: {
         canonical_name: 'Founder Copilot',
-        display_name_zh: '创业导师',
+        display_name_zh: 'Founder Guide',
         role_level: 'lead',
         role_type: 'strategy',
         primary_goal: 'Drive growth, conversion, and staged execution.',
@@ -27,13 +27,13 @@ const summary = buildFounderMainlineAgentCreateSummary({
     teams: [
         {
             team_id: 'content-growth',
-            team_name_zh: '内容增长团队',
+            team_name_zh: 'Content Growth Team',
             team_goal: 'Own bilingual content planning, production, and global distribution adaptation.',
             priority: 1,
             roles: [
                 {
                     canonical_name: 'Content Strategy Lead',
-                    display_name_zh: '内容策划负责人',
+                    display_name_zh: 'Content Lead',
                     role_level: 'lead',
                     role_type: 'content',
                     primary_goal: 'Lead bilingual content strategy and scripting.',
@@ -49,14 +49,14 @@ const summary = buildFounderMainlineAgentCreateSummary({
         {
             template_key: 'founder-copilot',
             canonical_name: 'Founder Copilot',
-            display_name_zh: '创业导师',
+            display_name_zh: 'Founder Guide',
             reason_zh: 'Primary founder template.',
         },
     ],
     skill_pack_recommendations: [
         {
             pack_id: 'founder-strategy-pack',
-            display_name_zh: '创业策略包',
+            display_name_zh: 'Founder Strategy Pack',
             reason_zh: 'Supports growth and conversion.',
             recommended_for_roles: ['Founder Copilot'],
         },
@@ -71,7 +71,20 @@ const summary = buildFounderMainlineAgentCreateSummary({
         resolved_template_keys: ['founder-copilot'],
         resolved_pack_ids: ['founder-strategy-pack'],
     },
-    traceability: [],
+    traceability: [
+        {
+            source_text: 'SaaS workflow automation for global creators.',
+            extracted_signal: 'SaaS workflow automation',
+            mapped_entity_type: 'scenario',
+            mapped_entity_key: 'cn-team-global-content-knowledge',
+        },
+        {
+            source_text: 'Need content and distribution.',
+            extracted_signal: 'content growth team',
+            mapped_entity_type: 'team',
+            mapped_entity_key: 'content-growth',
+        },
+    ],
     previous_plan_summary_zh: 'The previous draft included a separate customer follow-up team.',
     change_summary_zh: [
         'Removed the separate customer follow-up team.',
@@ -118,6 +131,36 @@ assert.deepStrictEqual(
     summary.deployPrepMissingItems,
     ['confirm current plan'],
     'summary should expose deploy-prep missing items',
+);
+
+assert.deepStrictEqual(
+    summary.scenarioSignals,
+    ['SaaS workflow automation', 'content growth team'],
+    'summary should expose human-readable scenario match signals',
+);
+
+assert.match(
+    summary.scenarioExplanationZh,
+    /SaaS workflow automation/,
+    'summary should explain why the scenario was selected',
+);
+
+assert.deepStrictEqual(
+    summary.priorityFocus,
+    ['bilingual content', 'global distribution'],
+    'summary should expose scenario priority focus chips',
+);
+
+assert.deepStrictEqual(
+    summary.previewTemplateNamesZh,
+    ['Founder Guide', 'Content Lead'],
+    'summary should dedupe founder and role template display names for preview',
+);
+
+assert.deepStrictEqual(
+    summary.previewPackNamesZh,
+    ['Founder Strategy Pack'],
+    'summary should expose skill-pack display names for preview',
 );
 
 console.log('founderMainlineDraftPlanSummary tests passed');

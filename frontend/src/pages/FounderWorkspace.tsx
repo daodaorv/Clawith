@@ -768,6 +768,58 @@ export default function FounderWorkspace() {
                                             </div>
                                         </div>
 
+                                        <div
+                                            style={{
+                                                padding: '14px',
+                                                borderRadius: '14px',
+                                                background: 'rgba(30, 132, 73, 0.08)',
+                                                border: '1px solid rgba(30, 132, 73, 0.18)',
+                                                display: 'grid',
+                                                gap: '10px',
+                                            }}
+                                        >
+                                            <div style={{ fontWeight: 600 }}>
+                                                {isChinese ? '场景命中说明' : 'Scenario rationale'}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.7 }}>
+                                                {draftSummary.scenarioExplanationZh}
+                                            </div>
+                                            {draftSummary.priorityFocus.length > 0 && (
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                    {draftSummary.priorityFocus.map((item) => (
+                                                        <span
+                                                            key={item}
+                                                            style={{
+                                                                padding: '5px 9px',
+                                                                borderRadius: '999px',
+                                                                background: 'var(--bg-primary)',
+                                                                border: '1px solid var(--border-subtle)',
+                                                                fontSize: '12px',
+                                                                color: 'var(--text-secondary)',
+                                                            }}
+                                                        >
+                                                            {item}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                                            <InsightList
+                                                label={isChinese ? '命中依据' : 'Matched signals'}
+                                                items={draftSummary.scenarioSignals}
+                                            />
+                                            <InsightList
+                                                label={isChinese ? '模板预览' : 'Template preview'}
+                                                items={draftSummary.previewTemplateNamesZh}
+                                            />
+                                            <InsightList
+                                                label={isChinese ? '能力包预览' : 'Skill-pack preview'}
+                                                items={draftSummary.previewPackNamesZh}
+                                            />
+                                        </div>
+
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                                             <MetricCard label={isChinese ? 'Founder 主控' : 'Founder lead'} value={draftSummary.founderDisplayNameZh} />
                                             <MetricCard label={isChinese ? '团队草案' : 'Draft teams'} value={draftSummary.teamNamesZh.join(' / ') || '-'} />
@@ -1077,6 +1129,32 @@ function MetricCard({ label, value }: { label: string; value: string }) {
         >
             <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{label}</div>
             <div style={{ fontSize: '14px', fontWeight: 600 }}>{value}</div>
+        </div>
+    );
+}
+
+function InsightList({ label, items }: { label: string; items: string[] }) {
+    if (items.length === 0) {
+        return null;
+    }
+
+    return (
+        <div
+            style={{
+                padding: '14px',
+                borderRadius: '14px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-subtle)',
+                display: 'grid',
+                gap: '8px',
+            }}
+        >
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>{label}</div>
+            <div style={{ display: 'grid', gap: '6px', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.6 }}>
+                {items.slice(0, 4).map((item) => (
+                    <div key={item}>• {item}</div>
+                ))}
+            </div>
         </div>
     );
 }

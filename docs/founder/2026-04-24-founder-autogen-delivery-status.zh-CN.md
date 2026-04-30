@@ -18,6 +18,7 @@
 - 2026-04-30：实现规划文件现在已经纳入仓库跟踪，并补充了执行状态；self-bootstrap live E2E 的自动清理链路也已经在 Docker 后端实际运行环境里验证通过。
 - 2026-04-30：新增手动 GitHub Actions live 门禁 `.github/workflows/founder-live-e2e.yml`，用于可从 GitHub runner 访问的 staging 或本地隧道环境，同时不让 push / pull request CI 变脆。
 - 2026-04-30：founder 场景选择器现在可以识别 SaaS / 运营自动化类 brief，并生成独立的 `cn-saas-ops-automation` 公司骨架，不再总是落回最初的内容 / 知识付费场景。
+- 2026-04-30：Founder Workspace 的草案评审现在会展示场景命中说明、命中依据、优先能力标签、模板预览和能力包预览，让没有工程经验的创业者也能理解为什么生成这套多 Agent 公司骨架。
 
 相关 founder 文档：
 
@@ -46,6 +47,7 @@
 
 - `frontend/src/pages/FounderWorkspace.tsx`
   - founder 专属工作流入口页
+  - 草案评审阶段会展示场景命中说明、命中依据、优先能力标签、模板预览和能力包预览，再进入物化确认
 - `frontend/src/pages/FounderCompanyDashboard.tsx`
   - materialize 后的 founder 控制台
 - `frontend/src/services/founderCompanyDashboard.ts`

@@ -7,8 +7,11 @@ import type {
 export interface FounderMainlineAgentCreateSummary {
     scenarioId: string;
     scenarioNameZh: string;
+    scenarioExplanationZh: string;
+    scenarioSignals: string[];
     planStatus: FounderMainlineDraftPlan['plan_status'];
     blueprintSummaryZh: string;
+    priorityFocus: string[];
     deployPrepBlockerReasonZh: string;
     deployPrepMissingItems: string[];
     previousPlanSummaryZh: string;
@@ -19,6 +22,8 @@ export interface FounderMainlineAgentCreateSummary {
     founderTemplateKey: string;
     recommendedTemplateKeys: string[];
     recommendedPackIds: string[];
+    previewTemplateNamesZh: string[];
+    previewPackNamesZh: string[];
     teamNamesZh: string[];
     openQuestions: string[];
     canEnterDeployPrep: boolean;
@@ -150,6 +155,24 @@ function collectRolePackIds(teams: FounderMainlineTeamPlan[]): string[] {
     return [...new Set(values)];
 }
 
+function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
+    return [...new Set(values.map((value) => (value || '').trim()).filter(Boolean))];
+}
+
+function buildScenarioExplanationZh(
+    scenarioSignals: string[],
+    priorityFocus: string[],
+): string {
+    const signalText = scenarioSignals.length > 0
+        ? `系统根据 ${scenarioSignals.join('、')} 命中了当前创业场景`
+        : '系统根据业务描述和访谈答案命中了当前创业场景';
+    const focusText = priorityFocus.length > 0
+        ? `优先生成 ${priorityFocus.join('、')} 相关的多 Agent 协作骨架`
+        : '优先生成第一版多 Agent 协作骨架';
+
+    return `${signalText}，${focusText}。`;
+}
+
 export function buildFounderMainlineAgentCreateSummary(
     plan: FounderMainlineDraftPlan,
 ): FounderMainlineAgentCreateSummary {
@@ -163,12 +186,29 @@ export function buildFounderMainlineAgentCreateSummary(
         ...plan.founder_copilot.recommended_skill_packs,
         ...collectRolePackIds(plan.teams),
     ];
+    const scenarioSignals = uniqueNonEmpty(
+        plan.traceability
+            .filter((item) => item.mapped_entity_type === 'scenario' || item.mapped_entity_type === 'team')
+            .map((item) => item.extracted_signal),
+    );
+    const priorityFocus = uniqueNonEmpty(plan.company_blueprint.priority_focus);
+    const previewTemplateNamesZh = uniqueNonEmpty([
+        plan.founder_copilot.display_name_zh,
+        ...plan.template_recommendations.map((item) => item.display_name_zh),
+        ...plan.teams.flatMap((team) => team.roles.map((role) => role.display_name_zh)),
+    ]);
+    const previewPackNamesZh = uniqueNonEmpty([
+        ...plan.skill_pack_recommendations.map((item) => item.display_name_zh),
+    ]);
 
     return {
         scenarioId: plan.scenario_id,
         scenarioNameZh: plan.scenario_name_zh,
+        scenarioExplanationZh: buildScenarioExplanationZh(scenarioSignals, priorityFocus),
+        scenarioSignals,
         planStatus: plan.plan_status,
         blueprintSummaryZh: plan.company_blueprint.summary_zh,
+        priorityFocus,
         deployPrepBlockerReasonZh: plan.deployment_readiness.blocker_reason_zh,
         deployPrepMissingItems: plan.deployment_readiness.missing_items,
         previousPlanSummaryZh: plan.previous_plan_summary_zh,
@@ -179,6 +219,8 @@ export function buildFounderMainlineAgentCreateSummary(
         founderTemplateKey: plan.founder_copilot.template_key,
         recommendedTemplateKeys: [...new Set(recommendedTemplateKeys)],
         recommendedPackIds: [...new Set(recommendedPackIds)],
+        previewTemplateNamesZh,
+        previewPackNamesZh,
         teamNamesZh: plan.teams.map((team) => team.team_name_zh),
         openQuestions: plan.open_questions,
         canEnterDeployPrep: plan.deployment_readiness.can_enter_deploy_prep,
