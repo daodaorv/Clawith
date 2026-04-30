@@ -13,6 +13,10 @@ This closes the main implementation plan tracked in:
 
 - `docs/superpowers/plans/2026-04-23-founder-autogen-framework.md`
 
+Latest status refresh:
+
+- 2026-04-30: the implementation plan is now repository-tracked with an execution-status section, and the self-bootstrap live E2E cleanup path has been verified against the running Docker-backed stack.
+
 Related founder docs:
 
 - `docs/founder/founder-onboarding.md`
@@ -143,6 +147,34 @@ Materialized agent cards shown on the dashboard:
 - `Project Chief of Staff`
 - `Content Strategy Lead`
 - `Global Distribution Lead`
+
+Latest release-readiness refresh on 2026-04-30:
+
+- `cd backend && python -m app.scripts.founder_release_readiness --include-live-e2e`
+  - backend founder ruff: passed
+  - backend founder pytest: `32 passed`
+  - frontend founder node tests: `9 pass`
+  - frontend production build: passed
+  - live founder E2E: passed in `self_bootstrap` mode
+- Latest live E2E result:
+  - workspace name: `Founder Workspace 23-36-57`
+  - final route: `/founder-workspace/dashboard?workspaceId=e3bf151a-8054-4d95-9520-b6fb2d8b0b34`
+  - dashboard headline: `Founder Workspace 23-36-57 currently has 4 active agents`
+  - displayed agents: `Founder Copilot`, `Project Chief of Staff`, `Content Strategy Lead`, `Global Distribution Lead`
+  - blockers: `0`
+  - relationships: `3`
+  - starter triggers: `4`
+- Cleanup evidence from that run:
+  - deleted agents: `4`
+  - deleted founder workspaces: `1`
+  - deleted dummy models: `1`
+  - deleted users: `1`
+  - deleted identities: `1`
+  - deleted tenants: `1`
+  - errors: `[]`
+- Follow-up sweep:
+  - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
+  - result: `No founder self-bootstrap E2E artifacts were found.`
 
 Screenshot artifacts:
 

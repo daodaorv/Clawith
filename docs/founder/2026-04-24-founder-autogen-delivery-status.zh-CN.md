@@ -13,6 +13,10 @@
 
 - `docs/superpowers/plans/2026-04-23-founder-autogen-framework.md`
 
+最新状态刷新：
+
+- 2026-04-30：实现规划文件现在已经纳入仓库跟踪，并补充了执行状态；self-bootstrap live E2E 的自动清理链路也已经在 Docker 后端实际运行环境里验证通过。
+
 相关 founder 文档：
 
 - `docs/founder/founder-onboarding.zh-CN.md`
@@ -143,6 +147,34 @@ Dashboard 上确认出现的 4 个 agent：
 - `Project Chief of Staff`
 - `Content Strategy Lead`
 - `Global Distribution Lead`
+
+2026-04-30 最新 release-readiness 刷新：
+
+- `cd backend && python -m app.scripts.founder_release_readiness --include-live-e2e`
+  - backend founder ruff：通过
+  - backend founder pytest：`32 passed`
+  - frontend founder node tests：`9 pass`
+  - frontend production build：通过
+  - live founder E2E：以 `self_bootstrap` 模式通过
+- 最新 live E2E 结果：
+  - workspace 名称：`Founder Workspace 23-36-57`
+  - 最终路由：`/founder-workspace/dashboard?workspaceId=e3bf151a-8054-4d95-9520-b6fb2d8b0b34`
+  - dashboard 标题：`Founder Workspace 23-36-57 currently has 4 active agents`
+  - 展示 agents：`Founder Copilot`、`Project Chief of Staff`、`Content Strategy Lead`、`Global Distribution Lead`
+  - blockers：`0`
+  - relationships：`3`
+  - starter triggers：`4`
+- 本次运行的自动清理证据：
+  - 删除 agents：`4`
+  - 删除 founder workspaces：`1`
+  - 删除 dummy models：`1`
+  - 删除 users：`1`
+  - 删除 identities：`1`
+  - 删除 tenants：`1`
+  - errors：`[]`
+- 后续补扫：
+  - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
+  - 结果：`No founder self-bootstrap E2E artifacts were found.`
 
 截图产物：
 
