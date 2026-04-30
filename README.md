@@ -120,7 +120,7 @@ This keeps the latest source frontend on `http://127.0.0.1:3010` while proxying 
 
 Clawith now includes a founder-facing flow that persists a founder workspace, runs `interview -> draft -> approval -> materialize`, and lands the user on a dedicated company dashboard backed by live runtime state.
 
-The current Founder Autogen scenario selector supports the original content / knowledge-business scaffold plus a SaaS / operations-automation scaffold for subscription products, CRM/spreadsheet workflow replacement, onboarding, customer success, and recurring reporting.
+The current Founder Autogen scenario selector supports the original content / knowledge-business scaffold, a SaaS / operations-automation scaffold for subscription products, CRM/spreadsheet workflow replacement, onboarding, customer success, and recurring reporting, plus a local-service lead-generation scaffold for appointments, booking conversion, customer follow-up, and delivery scheduling.
 
 Draft review now surfaces the scenario rationale, matched signals, priority focus, template preview, and skill-pack preview before materialization so a non-technical founder can understand what the scaffold is based on.
 

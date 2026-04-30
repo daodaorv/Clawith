@@ -18,7 +18,7 @@ Delivered product path:
 
 - A founder can create and resume a persisted founder workspace without opening raw `AgentCreate`.
 - The founder workspace now owns `interview -> draft -> approval -> materialize`.
-- The founder mainline can now branch beyond the original content/global-distribution scenario into a SaaS / operations-automation scaffold when the business brief signals product-led, subscription, CRM, workflow, or customer-success needs.
+- The founder mainline can now branch beyond the original content/global-distribution scenario into SaaS / operations-automation and local-service lead-generation scaffolds when the business brief signals product-led subscriptions, CRM/workflow automation, customer success, neighborhood leads, appointments, or booking conversion.
 - Materialization creates real Clawith agents, assigns model/template context, provisions skills, creates permissions and participants, and starts the agent runtime scaffold.
 - Company wiring creates agent-agent relationships and starter triggers from the generated plan.
 - The founder dashboard hydrates the stored materialization snapshot with live agent runtime state and blocker signals.
@@ -40,7 +40,7 @@ Remaining follow-ups:
 
 - Promote the live browser E2E path to an optional CI job once a stable browser/runtime strategy exists for hosted runners.
 - Add annotated screenshot walkthroughs after the founder UI copy stabilizes.
-- Continue expanding the scenario library beyond the current content/global-distribution and SaaS/operations-automation scaffolds.
+- Continue expanding the scenario library beyond the current content/global-distribution, SaaS/operations-automation, and local-service lead-generation scaffolds.
 
 ---
 

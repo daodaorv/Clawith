@@ -19,6 +19,7 @@
 - 2026-04-30：新增手动 GitHub Actions live 门禁 `.github/workflows/founder-live-e2e.yml`，用于可从 GitHub runner 访问的 staging 或本地隧道环境，同时不让 push / pull request CI 变脆。
 - 2026-04-30：founder 场景选择器现在可以识别 SaaS / 运营自动化类 brief，并生成独立的 `cn-saas-ops-automation` 公司骨架，不再总是落回最初的内容 / 知识付费场景。
 - 2026-04-30：Founder Workspace 的草案评审现在会展示场景命中说明、命中依据、优先能力标签、模板预览和能力包预览，让没有工程经验的创业者也能理解为什么生成这套多 Agent 公司骨架。
+- 2026-04-30：场景选择器现在也可以识别本地服务获客类 brief，并生成 `cn-local-service-leadgen` 骨架，覆盖预约转化、客户跟进和交付排期。
 
 相关 founder 文档：
 
@@ -199,6 +200,7 @@ Dashboard 上确认出现的 4 个 agent：
 
 - `cn-team-global-content-knowledge`：原始中文内容、海外分发、知识付费业务骨架。
 - `cn-saas-ops-automation`：SaaS / 运营自动化业务骨架，面向订阅产品、CRM/表格工作流替代、onboarding、客户成功和周期性报告。
+- `cn-local-service-leadgen`：本地服务获客业务骨架，面向同城线索、预约转化、客户跟进和交付排期。
 
 截图产物：
 

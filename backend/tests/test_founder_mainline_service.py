@@ -91,6 +91,36 @@ def test_generate_founder_mainline_draft_plan_selects_saas_ops_automation_scenar
     assert any(item.mapped_entity_key == "cn-saas-ops-automation" for item in plan.traceability)
 
 
+def test_generate_founder_mainline_draft_plan_selects_local_service_leadgen_scenario():
+    plan = generate_founder_mainline_draft_plan(
+        (
+            "We run a local service studio for family photography and home-service packages. "
+            "The business goal is to generate neighborhood leads, confirm appointments, and improve booking conversion."
+        ),
+        model_ready_context=_ready_model_context(),
+        answers=[
+            {"group_id": "market_target_users", "answer_text": "Local families and nearby community members."},
+            {"group_id": "core_product_service", "answer_text": "Appointment-based local service packages."},
+            {"group_id": "acquisition_distribution_channels", "answer_text": "Local short video, community posts, referrals, and private traffic."},
+            {"group_id": "conversion_sales_model", "answer_text": "Lead form to appointment confirmation to paid booking."},
+            {"group_id": "delivery_service_model", "answer_text": "Offline service slots with reminders, checklists, and follow-up."},
+            {"group_id": "content_language_requirements", "answer_text": "Chinese-first local copy."},
+            {
+                "group_id": "automation_human_boundary",
+                "answer_text": "Agents can draft replies and reminders; pricing, refunds, and formal promises need human approval.",
+            },
+            {"group_id": "team_gap_role_preference", "answer_text": "Lead generation, appointment follow-up, and delivery scheduling."},
+        ],
+    )
+
+    assert plan.scenario_id == "cn-local-service-leadgen"
+    assert "本地服务" in plan.scenario_name_zh
+    assert plan.company_blueprint["business_goal"] == "围绕本地服务获客、预约转化和交付排期生成首版 AI 公司骨架。"
+    assert "预约转化" in plan.company_blueprint["priority_focus"]
+    assert {"local-demand", "booking-conversion", "delivery-ops"}.issubset({team.team_id for team in plan.teams})
+    assert any(item.mapped_entity_key == "cn-local-service-leadgen" for item in plan.traceability)
+
+
 def test_generate_founder_mainline_draft_plan_applies_correction_notes():
     plan = generate_founder_mainline_draft_plan(
         "Chinese-first global knowledge business with \u8ddf\u8fdb, \u54a8\u8be2, and \u8f6c\u5316 needs.",

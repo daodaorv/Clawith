@@ -7,13 +7,14 @@ from typing import Any
 
 from app.duoduo.skill_packs import (
     FIRST_SCENARIO_ID,
+    LOCAL_SERVICE_SCENARIO_ID,
+    SAAS_OPS_SCENARIO_ID,
     get_pack_skill_slugs,
     get_scenario_name_zh,
     list_skill_packs,
-    SAAS_OPS_SCENARIO_ID,
 )
 
-GENERAL_FOUNDER_SCENARIOS = [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID]
+GENERAL_FOUNDER_SCENARIOS = [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID]
 
 _COMMON_AUTONOMY_POLICY = {
     "read_files": "L1",

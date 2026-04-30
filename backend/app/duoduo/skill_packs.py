@@ -9,10 +9,13 @@ FIRST_SCENARIO_ID = "cn-team-global-content-knowledge"
 FIRST_SCENARIO_NAME_ZH = "中文团队做出海内容 / 知识付费业务"
 SAAS_OPS_SCENARIO_ID = "cn-saas-ops-automation"
 SAAS_OPS_SCENARIO_NAME_ZH = "中文团队做 SaaS / 运营自动化业务"
+LOCAL_SERVICE_SCENARIO_ID = "cn-local-service-leadgen"
+LOCAL_SERVICE_SCENARIO_NAME_ZH = "中文团队做本地服务获客 / 预约转化业务"
 
 SCENARIO_NAME_ZH_BY_ID = {
     FIRST_SCENARIO_ID: FIRST_SCENARIO_NAME_ZH,
     SAAS_OPS_SCENARIO_ID: SAAS_OPS_SCENARIO_NAME_ZH,
+    LOCAL_SERVICE_SCENARIO_ID: LOCAL_SERVICE_SCENARIO_NAME_ZH,
 }
 
 _SKILL_PACKS: list[dict[str, Any]] = [
@@ -22,7 +25,7 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "创业策略包",
         "display_name_en": "Founder Strategy Pack",
         "business_goal": "把中文业务目标拆成可执行的出海内容、增长与优先级方案。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID],
+        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
         "recommended_roles": ["Founder Copilot"],
         "included_skills": ["web-research", "competitive-analysis", "data-analysis", "content-writing"],
         "required_integrations": [],
@@ -45,7 +48,7 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "内容生产包",
         "display_name_en": "Content Production Pack",
         "business_goal": "完成选题、资料整理、结构化写作与内容初稿生成。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID],
+        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
         "recommended_roles": ["Content Strategy Lead", "Global Distribution Lead"],
         "included_skills": ["content-writing", "web-research", "competitive-analysis"],
         "required_integrations": [],
@@ -91,7 +94,7 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "客服跟单包",
         "display_name_en": "Customer Follow-up Pack",
         "business_goal": "整理用户反馈、跟进线索并沉淀常见问题处理话术。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID],
+        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
         "recommended_roles": ["Customer Follow-up Lead"],
         "included_skills": ["content-writing", "data-analysis"],
         "required_integrations": [],
@@ -114,7 +117,7 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "报告输出包",
         "display_name_en": "Report Output Pack",
         "business_goal": "把分散分析结果整理成对管理层可读的中文报告。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID],
+        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
         "recommended_roles": ["Founder Copilot", "Project Chief of Staff"],
         "included_skills": ["data-analysis", "content-writing"],
         "required_integrations": [],

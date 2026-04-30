@@ -4,6 +4,7 @@ from collections import OrderedDict
 
 from app.duoduo.skill_packs import (
     FIRST_SCENARIO_ID,
+    LOCAL_SERVICE_SCENARIO_ID,
     SAAS_OPS_SCENARIO_ID,
     get_scenario_name_zh,
     list_skill_packs,
@@ -125,6 +126,30 @@ SAAS_OPS_SCENARIO_MARKERS = (
     "表格",
     "看板",
 )
+LOCAL_SERVICE_SCENARIO_MARKERS = (
+    "local service",
+    "local services",
+    "lead gen",
+    "lead generation",
+    "booking",
+    "appointment",
+    "appointments",
+    "clinic",
+    "salon",
+    "studio",
+    "restaurant",
+    "home service",
+    "home services",
+    "本地服务",
+    "同城",
+    "门店",
+    "到店",
+    "预约",
+    "线索",
+    "获客",
+    "探店",
+    "私域",
+)
 
 
 def _find_template_by_name(role_templates: list[dict], canonical_name: str) -> dict:
@@ -151,6 +176,9 @@ def _select_founder_scenario_id(
         return explicit_scenario_id
 
     normalized_context = (business_context or "").casefold()
+    if any(marker.casefold() in normalized_context for marker in LOCAL_SERVICE_SCENARIO_MARKERS):
+        return LOCAL_SERVICE_SCENARIO_ID
+
     if any(marker.casefold() in normalized_context for marker in SAAS_OPS_SCENARIO_MARKERS):
         return SAAS_OPS_SCENARIO_ID
 
@@ -552,7 +580,10 @@ def generate_founder_mainline_draft_plan(
     distribution = _find_template_by_name(role_templates, "Global Distribution Lead")
     project = _find_template_by_name(role_templates, "Project Chief of Staff")
 
-    if active_scenario_id == SAAS_OPS_SCENARIO_ID:
+    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+        customer = _find_template_by_name(role_templates, "Customer Follow-up Lead")
+        selected_templates = [founder, content, customer, project]
+    elif active_scenario_id == SAAS_OPS_SCENARIO_ID:
         customer = _find_template_by_name(role_templates, "Customer Follow-up Lead")
         selected_templates = [founder, project, customer, content]
     elif _needs_customer_followup(combined_context):
@@ -598,7 +629,46 @@ def generate_founder_mainline_draft_plan(
             )
         )
 
-    if active_scenario_id == SAAS_OPS_SCENARIO_ID:
+    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+        teams = [
+            FounderMainlineTeamPlan(
+                team_id="founder-office",
+                team_name_zh="创始人获客办公室",
+                team_goal="负责定位本地服务客群、确认服务承诺、定价边界和人工接待规则。",
+                priority=1,
+                roles=[
+                    _to_role_plan(founder, "作为主控角色，负责把本地服务目标拆成可执行的获客、预约和交付节奏。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="local-demand",
+                team_name_zh="本地获客内容团队",
+                team_goal="负责把服务卖点、案例、口碑和到店理由转成可复用的短内容、私域话术和渠道素材。",
+                priority=2,
+                roles=[
+                    _to_role_plan(content, "本地服务需要把服务优势、案例和预约入口转成高频获客内容。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="booking-conversion",
+                team_name_zh="预约转化跟进团队",
+                team_goal="负责线索分层、预约确认、FAQ 沉淀、到店提醒和高风险承诺升级。",
+                priority=3,
+                roles=[
+                    _to_role_plan(customer, "本地服务业务需要保留线索跟进、预约确认和客户问题闭环。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="delivery-ops",
+                team_name_zh="交付排期督办团队",
+                team_goal="负责把已预约客户转成排期、交付检查清单、复盘报告和后续复购动作。",
+                priority=4,
+                roles=[
+                    _to_role_plan(project, "本地服务从获客到交付需要明确排期、提醒、复盘和跨角色协作。"),
+                ],
+            ),
+        ]
+    elif active_scenario_id == SAAS_OPS_SCENARIO_ID:
         teams = [
             FounderMainlineTeamPlan(
                 team_id="founder-office",
@@ -674,7 +744,32 @@ def generate_founder_mainline_draft_plan(
         ]
     )
 
-    if active_scenario_id == SAAS_OPS_SCENARIO_ID:
+    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+        priority_focus = ["本地获客", "预约转化", "客户跟进", "交付排期"]
+        relationships = [
+            FounderMainlineRelationship(
+                from_role="Founder Copilot",
+                to_role="Content Strategy Lead",
+                relationship_type="positioning_to_acquisition",
+                handoff_rule_zh="Founder Copilot 负责确认本地服务定位、目标客群和人工承诺边界，内容负责人接手生成获客素材。",
+                escalation_rule_zh="涉及定价、疗效、交付承诺或品牌风险时回到 Founder Copilot 和人工确认。",
+            ),
+            FounderMainlineRelationship(
+                from_role="Content Strategy Lead",
+                to_role="Customer Follow-up Lead",
+                relationship_type="lead_to_booking",
+                handoff_rule_zh="内容负责人沉淀线索来源、用户问题和预约入口，客服跟进负责人接手分层、答疑和预约确认。",
+                escalation_rule_zh="退款、赔付、医疗/法律/财务类承诺或异常投诉必须人工接管。",
+            ),
+            FounderMainlineRelationship(
+                from_role="Customer Follow-up Lead",
+                to_role="Project Chief of Staff",
+                relationship_type="booking_to_delivery",
+                handoff_rule_zh="客服跟进负责人把已确认预约、客户偏好和注意事项交给项目督办负责人排期和交付复盘。",
+                escalation_rule_zh="排期冲突、服务资源不足或客户高风险诉求时升级给 Founder Copilot。",
+            ),
+        ]
+    elif active_scenario_id == SAAS_OPS_SCENARIO_ID:
         priority_focus = ["产品自动化", "客户成功", "运营报告", "需求验证"]
         relationships = [
             FounderMainlineRelationship(
@@ -741,7 +836,24 @@ def generate_founder_mainline_draft_plan(
 
     open_questions = _build_draft_plan_open_questions(brief, answer_map)
 
-    if active_scenario_id == SAAS_OPS_SCENARIO_ID:
+    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+        business_goal = "围绕本地服务获客、预约转化和交付排期生成首版 AI 公司骨架。"
+        summary_zh = "基于当前 brief，先生成 Founder 主控、本地获客内容、预约转化跟进和交付排期督办的首版团队草案。"
+        traceability = [
+            FounderMainlineTraceability(
+                source_text=combined_context,
+                extracted_signal="本地服务 / 预约转化",
+                mapped_entity_type="scenario",
+                mapped_entity_key=active_scenario_id,
+            ),
+            FounderMainlineTraceability(
+                source_text=combined_context,
+                extracted_signal="获客内容 + 线索跟进 + 交付排期",
+                mapped_entity_type="team",
+                mapped_entity_key="founder-office/local-demand/booking-conversion/delivery-ops",
+            ),
+        ]
+    elif active_scenario_id == SAAS_OPS_SCENARIO_ID:
         business_goal = "围绕 SaaS 产品、运营自动化和客户成功生成首版 AI 公司骨架。"
         summary_zh = "基于当前 brief，先生成 Founder 主控、产品运营自动化、客户成功和获客内容的首版团队草案。"
         traceability = [

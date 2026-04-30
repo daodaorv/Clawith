@@ -141,6 +141,27 @@ async def test_founder_template_library_route_returns_saas_ops_scenario_metadata
 
 
 @pytest.mark.asyncio
+async def test_founder_template_library_route_returns_local_service_scenario_metadata(client, platform_admin_user):
+    app.dependency_overrides[get_current_user] = lambda: platform_admin_user
+
+    async with await client() as ac:
+        response = await ac.get(
+            "/api/enterprise/duoduo/template-library",
+            params={"scenario": "cn-local-service-leadgen"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scenario"]["scenario_id"] == "cn-local-service-leadgen"
+    assert "本地服务" in payload["scenario"]["display_name_zh"]
+    assert {"Founder Copilot", "Content Strategy Lead", "Customer Follow-up Lead", "Project Chief of Staff"}.issubset(
+        {item["canonical_name"] for item in payload["items"]}
+    )
+
+
+@pytest.mark.asyncio
 async def test_founder_skill_pack_route_returns_saas_ops_packs(client, platform_admin_user):
     app.dependency_overrides[get_current_user] = lambda: platform_admin_user
 
@@ -156,6 +177,26 @@ async def test_founder_skill_pack_route_returns_saas_ops_packs(client, platform_
     payload = response.json()
     assert payload["scenario"]["display_name_zh"] == "中文团队做 SaaS / 运营自动化业务"
     assert {"founder-strategy-pack", "customer-followup-pack", "report-output-pack"}.issubset(
+        {item["pack_id"] for item in payload["items"]}
+    )
+
+
+@pytest.mark.asyncio
+async def test_founder_skill_pack_route_returns_local_service_packs(client, platform_admin_user):
+    app.dependency_overrides[get_current_user] = lambda: platform_admin_user
+
+    async with await client() as ac:
+        response = await ac.get(
+            "/api/enterprise/duoduo/skill-packs",
+            params={"scenario": "cn-local-service-leadgen"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scenario"]["scenario_id"] == "cn-local-service-leadgen"
+    assert {"founder-strategy-pack", "content-production-pack", "customer-followup-pack", "report-output-pack"}.issubset(
         {item["pack_id"] for item in payload["items"]}
     )
 
