@@ -61,6 +61,36 @@ def test_generate_founder_mainline_draft_plan_uses_structured_answers_to_refine_
     assert not any("\u53cc\u8bed" in item for item in plan.open_questions)
 
 
+def test_generate_founder_mainline_draft_plan_selects_saas_ops_automation_scenario():
+    plan = generate_founder_mainline_draft_plan(
+        (
+            "We are building a B2B SaaS automation product for small teams. "
+            "The business goal is to turn spreadsheets, CRM follow-up, and manual operations into repeatable workflows."
+        ),
+        model_ready_context=_ready_model_context(),
+        answers=[
+            {"group_id": "market_target_users", "answer_text": "Small B2B service teams and solo operators."},
+            {"group_id": "core_product_service", "answer_text": "SaaS subscription plus workflow automation setup."},
+            {"group_id": "acquisition_distribution_channels", "answer_text": "Product-led demos, outbound email, and partner referrals."},
+            {"group_id": "conversion_sales_model", "answer_text": "Free trial to onboarding call to monthly subscription."},
+            {"group_id": "delivery_service_model", "answer_text": "Self-serve product plus onboarding playbooks and customer success."},
+            {"group_id": "content_language_requirements", "answer_text": "Chinese-first product copy with English later."},
+            {
+                "group_id": "automation_human_boundary",
+                "answer_text": "Agents can draft workflows and reports; billing and production changes require human approval.",
+            },
+            {"group_id": "team_gap_role_preference", "answer_text": "Product operations, customer onboarding, and recurring reports."},
+        ],
+    )
+
+    assert plan.scenario_id == "cn-saas-ops-automation"
+    assert plan.scenario_name_zh == "中文团队做 SaaS / 运营自动化业务"
+    assert plan.company_blueprint["business_goal"] == "围绕 SaaS 产品、运营自动化和客户成功生成首版 AI 公司骨架。"
+    assert "产品自动化" in plan.company_blueprint["priority_focus"]
+    assert "product-ops" in {team.team_id for team in plan.teams}
+    assert any(item.mapped_entity_key == "cn-saas-ops-automation" for item in plan.traceability)
+
+
 def test_generate_founder_mainline_draft_plan_applies_correction_notes():
     plan = generate_founder_mainline_draft_plan(
         "Chinese-first global knowledge business with \u8ddf\u8fdb, \u54a8\u8be2, and \u8f6c\u5316 needs.",

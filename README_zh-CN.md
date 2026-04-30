@@ -115,6 +115,8 @@ VITE_DEV_PROXY_TARGET=http://127.0.0.1:3008 npm run dev -- --host 127.0.0.1 --po
 
 Clawith 现在已经提供 founder 导向的主流程，可以先持久化 founder workspace，再跑通 `interview -> draft -> approval -> materialize`，最后把用户送到一个由实时运行态驱动的公司 dashboard。
 
+当前 Founder Autogen 场景选择器已经支持最初的内容 / 知识付费业务骨架，以及 SaaS / 运营自动化业务骨架，后者面向订阅产品、CRM/表格工作流替代、onboarding、客户成功和周期性报告。
+
 参考文档：
 
 - [Founder 实现规划](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)

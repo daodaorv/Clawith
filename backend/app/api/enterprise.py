@@ -17,7 +17,7 @@ from app.core.security import (
     get_current_user,
 )
 from app.database import get_db
-from app.duoduo.skill_packs import FIRST_SCENARIO_ID, FIRST_SCENARIO_NAME_ZH, list_skill_packs
+from app.duoduo.skill_packs import FIRST_SCENARIO_ID, get_scenario_name_zh, list_skill_packs
 from app.duoduo.template_library import get_template_library_catalog
 from app.models.agent import Agent
 from app.models.audit import ApprovalRequest, AuditLog, EnterpriseInfo
@@ -195,7 +195,7 @@ async def get_duoduo_template_library(
         "version": catalog["version"],
         "scenario": {
             "scenario_id": scenario or FIRST_SCENARIO_ID,
-            "display_name_zh": FIRST_SCENARIO_NAME_ZH,
+            "display_name_zh": get_scenario_name_zh(scenario),
         },
         "count": len(catalog["role_templates"]),
         "items": catalog["role_templates"],
@@ -215,7 +215,7 @@ async def get_duoduo_skill_packs(
     return {
         "scenario": {
             "scenario_id": scenario or FIRST_SCENARIO_ID,
-            "display_name_zh": FIRST_SCENARIO_NAME_ZH,
+            "display_name_zh": get_scenario_name_zh(scenario),
         },
         "count": len(packs),
         "items": packs,

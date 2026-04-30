@@ -5,7 +5,15 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from app.duoduo.skill_packs import FIRST_SCENARIO_ID, FIRST_SCENARIO_NAME_ZH, get_pack_skill_slugs, list_skill_packs
+from app.duoduo.skill_packs import (
+    FIRST_SCENARIO_ID,
+    get_pack_skill_slugs,
+    get_scenario_name_zh,
+    list_skill_packs,
+    SAAS_OPS_SCENARIO_ID,
+)
+
+GENERAL_FOUNDER_SCENARIOS = [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID]
 
 _COMMON_AUTONOMY_POLICY = {
     "read_files": "L1",
@@ -73,7 +81,7 @@ _COORDINATION_PATTERNS: list[dict[str, Any]] = [
         "name": "Leader Hub Review Loop",
         "display_name_zh": "主控汇总与复核回路",
         "topology_type": "hub-and-spoke",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "roles_required": ["Founder Copilot", "Content Strategy Lead", "Project Chief of Staff"],
         "handoff_rules": [
             "Founder Copilot 负责目标拆解与最终决策。",
@@ -93,7 +101,7 @@ _COORDINATION_PATTERNS: list[dict[str, Any]] = [
         "name": "Content Production Pipeline",
         "display_name_zh": "内容生产流水线",
         "topology_type": "pipeline",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "roles_required": ["Content Strategy Lead", "Global Distribution Lead"],
         "handoff_rules": [
             "内容策划先产出选题与初稿，再交给分发负责人做渠道适配。",
@@ -112,7 +120,7 @@ _COORDINATION_PATTERNS: list[dict[str, Any]] = [
         "name": "Customer Feedback Escalation Loop",
         "display_name_zh": "用户反馈升级回路",
         "topology_type": "review-loop",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "roles_required": ["Customer Follow-up Lead", "Project Chief of Staff"],
         "handoff_rules": [
             "客服跟单先做问题归类与优先级判断，再升级重要问题给项目督办。",
@@ -135,7 +143,7 @@ _ROLE_TEMPLATES: list[dict[str, Any]] = [
         "role_level": "lead",
         "role_type": "strategy",
         "primary_goal": "把中文业务目标拆成阶段清晰、可部署的团队方案。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "business_stage": ["0-1", "1-10"],
         "recommended_model_family": ["deepseek", "qwen", "openai-compatible"],
         "default_autonomy_level": "L2",
@@ -152,7 +160,7 @@ _ROLE_TEMPLATES: list[dict[str, Any]] = [
         "role_level": "lead",
         "role_type": "content",
         "primary_goal": "围绕中文业务目标产出选题、结构、脚本和内容初稿。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "business_stage": ["0-1", "1-10"],
         "recommended_model_family": ["deepseek", "qwen"],
         "default_autonomy_level": "L2",
@@ -169,7 +177,7 @@ _ROLE_TEMPLATES: list[dict[str, Any]] = [
         "role_level": "lead",
         "role_type": "distribution",
         "primary_goal": "针对不同海外渠道输出分发版本、节奏与复盘建议。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "business_stage": ["0-1", "1-10"],
         "recommended_model_family": ["deepseek", "qwen"],
         "default_autonomy_level": "L2",
@@ -186,7 +194,7 @@ _ROLE_TEMPLATES: list[dict[str, Any]] = [
         "role_level": "lead",
         "role_type": "operations",
         "primary_goal": "归类用户反馈、沉淀 FAQ、推动高优先级线索跟进。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "business_stage": ["1-10"],
         "recommended_model_family": ["deepseek", "qwen"],
         "default_autonomy_level": "L2",
@@ -203,7 +211,7 @@ _ROLE_TEMPLATES: list[dict[str, Any]] = [
         "role_level": "lead",
         "role_type": "management",
         "primary_goal": "推动任务拆解、问题升级、周报复盘和跨角色协作。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": GENERAL_FOUNDER_SCENARIOS,
         "business_stage": ["0-1", "1-10"],
         "recommended_model_family": ["deepseek", "qwen", "openai-compatible"],
         "default_autonomy_level": "L2",
@@ -383,8 +391,8 @@ def get_template_library_catalog(*, scenario: str | None = None) -> dict[str, An
     return {
         "version": "v1",
         "scenario": {
-            "scenario_id": FIRST_SCENARIO_ID,
-            "scenario_name_zh": FIRST_SCENARIO_NAME_ZH,
+            "scenario_id": scenario or FIRST_SCENARIO_ID,
+            "scenario_name_zh": get_scenario_name_zh(scenario),
         },
         "sources": deepcopy(_SOURCE_CATALOG),
         "role_templates": role_templates,

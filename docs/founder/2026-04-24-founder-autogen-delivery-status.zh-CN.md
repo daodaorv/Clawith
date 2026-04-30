@@ -17,6 +17,7 @@
 
 - 2026-04-30：实现规划文件现在已经纳入仓库跟踪，并补充了执行状态；self-bootstrap live E2E 的自动清理链路也已经在 Docker 后端实际运行环境里验证通过。
 - 2026-04-30：新增手动 GitHub Actions live 门禁 `.github/workflows/founder-live-e2e.yml`，用于可从 GitHub runner 访问的 staging 或本地隧道环境，同时不让 push / pull request CI 变脆。
+- 2026-04-30：founder 场景选择器现在可以识别 SaaS / 运营自动化类 brief，并生成独立的 `cn-saas-ops-automation` 公司骨架，不再总是落回最初的内容 / 知识付费场景。
 
 相关 founder 文档：
 
@@ -34,6 +35,8 @@
   - 将审批后的 founder 方案转换为真实公司包
 - `backend/app/services/founder_company_wiring.py`
   - 将生成角色映射到 Clawith 模板化 agents、skills、relationships、permissions 和 starter triggers
+- `backend/app/services/founder_mainline_service.py`
+  - 根据 business brief 和结构化答案，在原始内容/出海分发场景与 SaaS/运营自动化场景之间选择不同公司骨架
 
 关键后端提交：
 
@@ -153,7 +156,7 @@ Dashboard 上确认出现的 4 个 agent：
 
 - `cd backend && python -m app.scripts.founder_release_readiness --include-live-e2e`
   - backend founder ruff：通过
-  - backend founder pytest：`32 passed`
+  - backend founder pytest：`35 passed`
   - frontend founder node tests：`9 pass`
   - frontend production build：通过
   - live founder E2E：以 `self_bootstrap` 模式通过
@@ -190,6 +193,11 @@ Dashboard 上确认出现的 4 个 agent：
 - 如果不提供凭据，workflow 会走 self-bootstrap 路径；除非手动勾选 `skip_cleanup`，否则默认会清理自举产物。
 - 截图会作为 `founder-live-e2e-screenshots` artifact 上传。
 
+当前场景覆盖：
+
+- `cn-team-global-content-knowledge`：原始中文内容、海外分发、知识付费业务骨架。
+- `cn-saas-ops-automation`：SaaS / 运营自动化业务骨架，面向订阅产品、CRM/表格工作流替代、onboarding、客户成功和周期性报告。
+
 截图产物：
 
 - `output/playwright/2026-04-24T13-10-15-461Z-*.png`
@@ -209,4 +217,5 @@ Dashboard 上确认出现的 4 个 agent：
 - 在触碰 founder onboarding、workspace 选择、materialization 或 dashboard 行为的发布前，用手动 `Founder Live E2E (Manual)` workflow 跑一次可访问的 staging 或 tunnel URL。
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 如果某次中断或修复前的 self-bootstrap 运行留下了一次性 founder E2E 脏数据，可以执行 `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` 做补扫。
+- 在 SaaS/运营自动化之后继续补下一类 founder 场景，例如本地服务获客或跨境电商运营。
 - 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。

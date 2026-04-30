@@ -17,6 +17,7 @@ Latest status refresh:
 
 - 2026-04-30: the implementation plan is now repository-tracked with an execution-status section, and the self-bootstrap live E2E cleanup path has been verified against the running Docker-backed stack.
 - 2026-04-30: a manual GitHub Actions live gate is available at `.github/workflows/founder-live-e2e.yml` for reachable staging/local-tunnel environments without making push or pull-request CI brittle.
+- 2026-04-30: the founder scenario selector now detects SaaS / operations-automation briefs and generates a distinct `cn-saas-ops-automation` company scaffold instead of always falling back to the original content / knowledge-business scenario.
 
 Related founder docs:
 
@@ -34,6 +35,8 @@ Related founder docs:
   - converts approved founder plan into a real company package
 - `backend/app/services/founder_company_wiring.py`
   - maps generated roles to template-backed Clawith agents, skills, relationships, permissions, and starter triggers
+- `backend/app/services/founder_mainline_service.py`
+  - selects between the original content/global-distribution scaffold and the SaaS/operations-automation scaffold from the business brief and structured answers
 
 Key shipped backend change set:
 
@@ -153,7 +156,7 @@ Latest release-readiness refresh on 2026-04-30:
 
 - `cd backend && python -m app.scripts.founder_release_readiness --include-live-e2e`
   - backend founder ruff: passed
-  - backend founder pytest: `32 passed`
+  - backend founder pytest: `35 passed`
   - frontend founder node tests: `9 pass`
   - frontend production build: passed
   - live founder E2E: passed in `self_bootstrap` mode
@@ -190,6 +193,11 @@ Manual GitHub Actions live gate:
 - If credentials are omitted, the workflow uses the self-bootstrap path and cleanup remains enabled unless the manual `skip_cleanup` input is set.
 - Screenshots are uploaded as the `founder-live-e2e-screenshots` artifact.
 
+Scenario coverage:
+
+- `cn-team-global-content-knowledge`: original Chinese-first content, global distribution, knowledge-business scaffold.
+- `cn-saas-ops-automation`: SaaS / operations-automation scaffold for subscription products, CRM/spreadsheet workflow replacement, onboarding, customer success, and recurring reporting.
+
 Screenshot artifacts:
 
 - `output/playwright/2026-04-24T13-10-15-461Z-*.png`
@@ -209,4 +217,5 @@ Screenshot artifacts:
 - Use the manual `Founder Live E2E (Manual)` workflow against a reachable staging or tunnel URL before releases that touch founder onboarding, workspace selection, materialization, or dashboard behavior.
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Use `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` if an interrupted or pre-fix self-bootstrap run leaves disposable founder E2E artifacts behind.
+- Add the next founder scenario family after SaaS/operations automation, such as local-service lead generation or cross-border ecommerce operations.
 - Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.
