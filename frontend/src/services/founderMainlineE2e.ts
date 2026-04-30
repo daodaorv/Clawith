@@ -6,6 +6,7 @@ import {
 export interface FounderMainlineE2eConfig {
     authMode: 'login' | 'self_bootstrap';
     cleanupAfterRun: boolean;
+    scenarioKey: FounderMainlineE2eScenarioKey;
     email: string;
     password: string;
     baseUrl: string;
@@ -22,11 +23,15 @@ export interface FounderMainlineE2eAnswer {
     answerText: string;
 }
 
+export type FounderMainlineE2eScenarioKey = 'content-knowledge' | 'saas-ops-automation' | 'local-service-leadgen';
+
 export interface FounderMainlineE2eScenario {
+    scenarioKey: FounderMainlineE2eScenarioKey;
     workspaceName: string;
     businessBrief: string;
     coreOffer: string;
     acquisitionChannel: string;
+    expectedDraftTexts: string[];
     answers: FounderMainlineE2eAnswer[];
     expectedAgentNames: string[];
     minimumRelationshipCount: number;
@@ -54,6 +59,38 @@ function isHeaded(value: string | undefined): boolean {
 function isTruthy(value: string | undefined): boolean {
     const normalized = value?.trim().toLowerCase() || '';
     return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function readScenarioKey(value: string | undefined): FounderMainlineE2eScenarioKey {
+    const normalized = value?.trim().toLowerCase() || '';
+    if (!normalized) {
+        return 'content-knowledge';
+    }
+    if (
+        normalized === 'content'
+        || normalized === 'content-knowledge'
+        || normalized === 'cn-team-global-content-knowledge'
+    ) {
+        return 'content-knowledge';
+    }
+    if (
+        normalized === 'saas'
+        || normalized === 'saas-ops'
+        || normalized === 'saas-ops-automation'
+        || normalized === 'cn-saas-ops-automation'
+    ) {
+        return 'saas-ops-automation';
+    }
+    if (
+        normalized === 'local'
+        || normalized === 'local-service'
+        || normalized === 'local-service-leadgen'
+        || normalized === 'cn-local-service-leadgen'
+    ) {
+        return 'local-service-leadgen';
+    }
+
+    throw new Error(`Unsupported FOUNDER_E2E_SCENARIO: ${value}`);
 }
 
 function buildFounderUrl(baseUrl: string, pathname: string, workspaceId?: string): string {
@@ -93,6 +130,7 @@ export function buildFounderMainlineE2eConfig(
     const auth = resolveFounderMainlineE2eAuth(env);
     return {
         ...auth,
+        scenarioKey: readScenarioKey(env.FOUNDER_E2E_SCENARIO),
         baseUrl: readOptionalEnv(env.FOUNDER_E2E_BASE_URL, 'http://127.0.0.1:3010'),
         tenantName: readOptionalEnv(env.FOUNDER_E2E_TENANT, 'Solo Founder Lab'),
         modelLabel: readOptionalEnv(env.FOUNDER_E2E_MODEL_LABEL, ''),
@@ -128,7 +166,7 @@ function formatRunIdForWorkspace(runId: string): string {
     return 'run';
 }
 
-export function buildFounderMainlineE2eScenario(runId: string): FounderMainlineE2eScenario {
+function buildContentKnowledgeScenario(runId: string): FounderMainlineE2eScenario {
     const businessBrief =
         'Build a Chinese-first founder growth studio that sells consulting and cohort training to overseas Chinese creators, using short video, email, and community as acquisition channels.';
     const answerTextByGroup: Record<FounderMainlineInterviewGroupId, string> = {
@@ -151,10 +189,18 @@ export function buildFounderMainlineE2eScenario(runId: string): FounderMainlineE
     };
 
     return {
+        scenarioKey: 'content-knowledge',
         workspaceName: `Founder Workspace ${formatRunIdForWorkspace(runId)}`,
         businessBrief,
         coreOffer: 'Consulting + cohort program',
         acquisitionChannel: 'Short video + email + community',
+        expectedDraftTexts: [
+            'Scenario rationale',
+            'Matched signals',
+            'Template preview',
+            'Skill-pack preview',
+            '出海内容 / 知识付费',
+        ],
         answers: FOUNDER_MAINLINE_INTERVIEW_FIELDS.map((field) => ({
             groupId: field.group_id,
             answerText: answerTextByGroup[field.group_id],
@@ -168,4 +214,118 @@ export function buildFounderMainlineE2eScenario(runId: string): FounderMainlineE
         minimumRelationshipCount: 1,
         minimumTriggerCount: 1,
     };
+}
+
+function buildSaasOpsScenario(runId: string): FounderMainlineE2eScenario {
+    const businessBrief =
+        'Build a B2B SaaS operations-automation product that turns spreadsheets, CRM follow-up, onboarding, and recurring reports into repeatable workflows for small service teams.';
+    const answerTextByGroup: Record<FounderMainlineInterviewGroupId, string> = {
+        market_target_users:
+            'Small B2B service teams and solo operators who still coordinate customer work in spreadsheets and chat.',
+        core_product_service:
+            'A subscription SaaS workflow automation product plus onboarding setup.',
+        acquisition_distribution_channels:
+            'Product-led demos, outbound email, partner referrals, and case-study content.',
+        conversion_sales_model:
+            'Free trial to onboarding call to monthly subscription conversion.',
+        delivery_service_model:
+            'Self-serve product plus onboarding playbooks, customer-success follow-up, and recurring reports.',
+        content_language_requirements:
+            'Chinese-first product copy with English later for selected sales assets.',
+        automation_human_boundary:
+            'AI can draft workflows and reports; billing, permissions, and production changes require human approval.',
+        team_gap_role_preference:
+            'Product operations, customer onboarding, recurring reports, and demand generation.',
+    };
+
+    return {
+        scenarioKey: 'saas-ops-automation',
+        workspaceName: `Founder Workspace ${formatRunIdForWorkspace(runId)}`,
+        businessBrief,
+        coreOffer: 'SaaS subscription + onboarding setup',
+        acquisitionChannel: 'Product-led demos + outbound + referrals',
+        expectedDraftTexts: [
+            'Scenario rationale',
+            'Matched signals',
+            'SaaS / 运营自动化',
+            '产品自动化',
+            '客户成功',
+        ],
+        answers: FOUNDER_MAINLINE_INTERVIEW_FIELDS.map((field) => ({
+            groupId: field.group_id,
+            answerText: answerTextByGroup[field.group_id],
+        })),
+        expectedAgentNames: [
+            'Founder Copilot',
+            'Project Chief of Staff',
+            'Customer Follow-up Lead',
+            'Content Strategy Lead',
+        ],
+        minimumRelationshipCount: 1,
+        minimumTriggerCount: 1,
+    };
+}
+
+function buildLocalServiceLeadgenScenario(runId: string): FounderMainlineE2eScenario {
+    const businessBrief =
+        'Build a local service lead-generation system for a neighborhood photography studio and home-service packages, using short video, community posts, referrals, and private traffic to confirm appointments and improve booking conversion.';
+    const answerTextByGroup: Record<FounderMainlineInterviewGroupId, string> = {
+        market_target_users:
+            'Local families, nearby community members, and neighborhood customers who need appointment-based services.',
+        core_product_service:
+            'Photography sessions and home-service packages sold through appointment booking.',
+        acquisition_distribution_channels:
+            'Local short video, community posts, referrals, review content, and private traffic follow-up.',
+        conversion_sales_model:
+            'Lead form or private message to appointment confirmation, then paid booking and offline service delivery.',
+        delivery_service_model:
+            'Offline service slots with reminders, preparation checklist, after-service feedback, and repeat purchase follow-up.',
+        content_language_requirements:
+            'Chinese-first local-service copy.',
+        automation_human_boundary:
+            'AI can draft lead replies, reminders, and checklists; pricing, refunds, service promises, and complaints need human approval.',
+        team_gap_role_preference:
+            'Local lead generation, appointment follow-up, and delivery scheduling.',
+    };
+
+    return {
+        scenarioKey: 'local-service-leadgen',
+        workspaceName: `Founder Workspace ${formatRunIdForWorkspace(runId)}`,
+        businessBrief,
+        coreOffer: 'Appointment-based local service packages',
+        acquisitionChannel: 'Local short video + referrals + private traffic',
+        expectedDraftTexts: [
+            'Scenario rationale',
+            'Matched signals',
+            '本地服务 / 预约转化',
+            '预约转化',
+            '客户跟进',
+        ],
+        answers: FOUNDER_MAINLINE_INTERVIEW_FIELDS.map((field) => ({
+            groupId: field.group_id,
+            answerText: answerTextByGroup[field.group_id],
+        })),
+        expectedAgentNames: [
+            'Founder Copilot',
+            'Content Strategy Lead',
+            'Customer Follow-up Lead',
+            'Project Chief of Staff',
+        ],
+        minimumRelationshipCount: 1,
+        minimumTriggerCount: 1,
+    };
+}
+
+export function buildFounderMainlineE2eScenario(
+    runId: string,
+    scenarioKey: FounderMainlineE2eScenarioKey = 'content-knowledge',
+): FounderMainlineE2eScenario {
+    if (scenarioKey === 'saas-ops-automation') {
+        return buildSaasOpsScenario(runId);
+    }
+    if (scenarioKey === 'local-service-leadgen') {
+        return buildLocalServiceLeadgenScenario(runId);
+    }
+
+    return buildContentKnowledgeScenario(runId);
 }

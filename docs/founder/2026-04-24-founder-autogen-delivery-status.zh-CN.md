@@ -20,6 +20,7 @@
 - 2026-04-30：founder 场景选择器现在可以识别 SaaS / 运营自动化类 brief，并生成独立的 `cn-saas-ops-automation` 公司骨架，不再总是落回最初的内容 / 知识付费场景。
 - 2026-04-30：Founder Workspace 的草案评审现在会展示场景命中说明、命中依据、优先能力标签、模板预览和能力包预览，让没有工程经验的创业者也能理解为什么生成这套多 Agent 公司骨架。
 - 2026-04-30：场景选择器现在也可以识别本地服务获客类 brief，并生成 `cn-local-service-leadgen` 骨架，覆盖预约转化、客户跟进和交付排期。
+- 2026-04-30：live founder E2E runner 现在可以通过 `FOUNDER_E2E_SCENARIO` 选择场景，本地服务获客场景也已经通过真实浏览器链路验证。
 
 相关 founder 文档：
 
@@ -101,6 +102,7 @@ npm run test:e2e:founder
 
 - 按需把 `playwright-core@1.59.1` 安装到临时 runtime 目录，不新增仓库依赖。
 - 直接调用本机 Microsoft Edge，并把截图输出到 `output/playwright/`。
+- 可通过 `FOUNDER_E2E_SCENARIO` 选择 `content-knowledge`、`saas-ops-automation` 或 `local-service-leadgen`；默认仍为 `content-knowledge`。
 - 如果没有显式提供 `FOUNDER_E2E_*` 凭据，它会自动注册一次性 founder 账号、创建一次性公司、在需要时为该 tenant 注入一个验证用 dummy model，然后继续跑完整 founder 主链路。
 - 这条 self-bootstrap 默认路径现在还会在断言完成后自动删除一次性账号、公司、workspace、agents 和 dummy model，避免本地数据库持续堆积脏数据。
 - 如果显式提供 `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD`，它会复用一个已经准备好模型的 founder tenant，并继续覆盖 `登录 -> 多租户选择（如需要） -> 创建 founder workspace -> 访谈 -> draft -> 确认 -> materialize -> founder dashboard 断言`。
@@ -183,6 +185,21 @@ Dashboard 上确认出现的 4 个 agent：
   - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
   - 结果：`No founder self-bootstrap E2E artifacts were found.`
 
+2026-04-30 本地服务场景 live E2E 刷新：
+
+- `cd frontend && FOUNDER_E2E_SCENARIO=local-service-leadgen npm run test:e2e:founder`
+  - auth mode：`self_bootstrap`
+  - workspace 名称：`Founder Workspace 15-52-05`
+  - 最终路由：`/founder-workspace/dashboard?workspaceId=cadc6e41-a2ea-4ed4-86b8-6e437dfb3c95`
+  - scenario key：`local-service-leadgen`
+  - 展示 agents：`Founder Copilot`、`Content Strategy Lead`、`Customer Follow-up Lead`、`Project Chief of Staff`
+  - blockers：`0`
+  - relationships：`3`
+  - starter triggers：`4`
+  - 清理删除：`4` 个 agents、`1` 个 founder workspace、`1` 个 dummy model、`1` 个 user、`1` 个 identity、`1` 个 tenant
+  - cleanup errors：`[]`
+  - 后续补扫结果：`No founder self-bootstrap E2E artifacts were found.`
+
 手动 GitHub Actions live 门禁：
 
 - Workflow：`.github/workflows/founder-live-e2e.yml`
@@ -193,6 +210,8 @@ Dashboard 上确认出现的 4 个 agent：
   - `FOUNDER_E2E_PASSWORD`
   - `FOUNDER_E2E_TENANT`
   - `FOUNDER_E2E_MODEL_LABEL`
+- 可选输入：
+  - `scenario` = `content-knowledge`、`saas-ops-automation` 或 `local-service-leadgen`
 - 如果不提供凭据，workflow 会走 self-bootstrap 路径；除非手动勾选 `skip_cleanup`，否则默认会清理自举产物。
 - 截图会作为 `founder-live-e2e-screenshots` artifact 上传。
 

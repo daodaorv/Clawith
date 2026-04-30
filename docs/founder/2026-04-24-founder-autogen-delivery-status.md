@@ -20,6 +20,7 @@ Latest status refresh:
 - 2026-04-30: the founder scenario selector now detects SaaS / operations-automation briefs and generates a distinct `cn-saas-ops-automation` company scaffold instead of always falling back to the original content / knowledge-business scenario.
 - 2026-04-30: the Founder Workspace draft review now explains the selected scenario with matched signals, priority-focus chips, template preview, and skill-pack preview so non-technical founders can understand why the scaffold was generated.
 - 2026-04-30: the scenario selector now also detects local-service lead-generation briefs and generates a `cn-local-service-leadgen` scaffold for appointments, booking conversion, customer follow-up, and delivery scheduling.
+- 2026-04-30: the live founder E2E runner can now select a scenario through `FOUNDER_E2E_SCENARIO`, and the local-service scenario was verified through the real browser path.
 
 Related founder docs:
 
@@ -101,6 +102,7 @@ Notes about the browser runner:
 
 - It installs `playwright-core@1.59.1` into a temporary runtime directory on demand instead of adding Playwright to repo dependencies.
 - It launches the system Microsoft Edge executable and writes screenshots to `output/playwright/`.
+- Set `FOUNDER_E2E_SCENARIO` to `content-knowledge`, `saas-ops-automation`, or `local-service-leadgen` to choose which founder scenario the browser runner exercises. The default remains `content-knowledge`.
 - With no `FOUNDER_E2E_*` credentials it self-bootstraps a disposable founder account, creates a disposable company, seeds a tenant-scoped dummy model when needed, and then runs the founder mainline flow.
 - That self-bootstrap default now also deletes the disposable account, company, workspace, agents, and dummy model at the end of the run so the local database stays clean.
 - With explicit `FOUNDER_E2E_EMAIL/FOUNDER_E2E_PASSWORD` values it reuses an existing model-ready founder tenant and still covers `login -> tenant select (when required) -> founder workspace create -> planning interview -> draft -> confirm -> materialize -> founder dashboard assertions`.
@@ -183,6 +185,21 @@ Latest release-readiness refresh on 2026-04-30:
   - `docker exec clawith-backend-1 python3 -m app.scripts.cleanup_founder_self_bootstrap`
   - result: `No founder self-bootstrap E2E artifacts were found.`
 
+Latest local-service live E2E refresh on 2026-04-30:
+
+- `cd frontend && FOUNDER_E2E_SCENARIO=local-service-leadgen npm run test:e2e:founder`
+  - auth mode: `self_bootstrap`
+  - workspace name: `Founder Workspace 15-52-05`
+  - final route: `/founder-workspace/dashboard?workspaceId=cadc6e41-a2ea-4ed4-86b8-6e437dfb3c95`
+  - scenario key: `local-service-leadgen`
+  - displayed agents: `Founder Copilot`, `Content Strategy Lead`, `Customer Follow-up Lead`, `Project Chief of Staff`
+  - blockers: `0`
+  - relationships: `3`
+  - starter triggers: `4`
+  - cleanup deleted: `4` agents, `1` founder workspace, `1` dummy model, `1` user, `1` identity, `1` tenant
+  - cleanup errors: `[]`
+  - follow-up sweep result: `No founder self-bootstrap E2E artifacts were found.`
+
 Manual GitHub Actions live gate:
 
 - Workflow: `.github/workflows/founder-live-e2e.yml`
@@ -193,6 +210,8 @@ Manual GitHub Actions live gate:
   - `FOUNDER_E2E_PASSWORD`
   - `FOUNDER_E2E_TENANT`
   - `FOUNDER_E2E_MODEL_LABEL`
+- Optional input:
+  - `scenario` = `content-knowledge`, `saas-ops-automation`, or `local-service-leadgen`
 - If credentials are omitted, the workflow uses the self-bootstrap path and cleanup remains enabled unless the manual `skip_cleanup` input is set.
 - Screenshots are uploaded as the `founder-live-e2e-screenshots` artifact.
 

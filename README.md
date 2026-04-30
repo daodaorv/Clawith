@@ -124,6 +124,8 @@ The current Founder Autogen scenario selector supports the original content / kn
 
 Draft review now surfaces the scenario rationale, matched signals, priority focus, template preview, and skill-pack preview before materialization so a non-technical founder can understand what the scaffold is based on.
 
+The live founder browser runner can exercise a specific scaffold with `FOUNDER_E2E_SCENARIO=content-knowledge|saas-ops-automation|local-service-leadgen`.
+
 Reference docs:
 
 - [Founder implementation plan](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)

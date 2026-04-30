@@ -119,6 +119,8 @@ Clawith 现在已经提供 founder 导向的主流程，可以先持久化 found
 
 草案评审现在会在物化前展示场景命中说明、命中依据、优先能力、模板预览和能力包预览，让没有工程经验的创业者理解这套公司骨架基于什么生成。
 
+真实浏览器 founder runner 现在可以通过 `FOUNDER_E2E_SCENARIO=content-knowledge|saas-ops-automation|local-service-leadgen` 指定要验证的公司骨架。
+
 参考文档：
 
 - [Founder 实现规划](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)

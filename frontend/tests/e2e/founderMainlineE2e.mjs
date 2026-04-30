@@ -141,6 +141,32 @@ async function choosePlanningModel(page, modelLabel, authMode) {
     }, modelLabel);
 }
 
+async function waitForFounderDraftReview(page, expectedDraftTexts) {
+    const handle = await page.waitForFunction((expectedTexts) => {
+        const sectionText = document.getElementById('founder-planning-section')?.innerText || '';
+        if (expectedTexts.every((item) => sectionText.toLowerCase().includes(String(item).toLowerCase()))) {
+            return { ready: true, sectionText };
+        }
+
+        const draftError = Array.from(document.querySelectorAll('[role="alert"], .error, .form-error'))
+            .map((node) => (node.textContent || '').trim())
+            .find(Boolean);
+        if (draftError) {
+            return { ready: false, error: draftError, sectionText };
+        }
+
+        return false;
+    }, expectedDraftTexts, { timeout: 60000 });
+    const result = await handle.jsonValue();
+    await handle.dispose();
+
+    if (!result?.ready) {
+        throw new Error(`Founder draft review did not become ready: ${result?.error || 'no draft text found'}`);
+    }
+
+    return result.sectionText || '';
+}
+
 function extractMetric(pageText, label) {
     const escapedLabel = escapeRegExp(label);
     const match = pageText.match(new RegExp(`${escapedLabel}\\s*(\\d+)`, 'i'));
@@ -370,7 +396,7 @@ async function selfBootstrapFounderSession(page, { email, password, companyName,
 async function main() {
     const config = buildFounderMainlineE2eConfig(process.env);
     const runId = new Date().toISOString().replace(/[:.]/g, '-');
-    const scenario = buildFounderMainlineE2eScenario(runId);
+    const scenario = buildFounderMainlineE2eScenario(runId, config.scenarioKey);
     const runtimeDir = resolveAbsolutePath(config.runtimeDir, os.tmpdir());
     const screenshotDir = resolveAbsolutePath(config.screenshotDir, repoRoot);
 
@@ -474,6 +500,14 @@ async function main() {
         const generateDraftButton = page.getByRole('button', { name: 'Generate founder draft plan' });
         await generateDraftButton.click();
         await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+        const draftText = await waitForFounderDraftReview(page, scenario.expectedDraftTexts);
+        for (const expectedDraftText of scenario.expectedDraftTexts) {
+            assert.match(
+                draftText,
+                new RegExp(escapeRegExp(expectedDraftText), 'i'),
+                `Expected founder draft review to include "${expectedDraftText}".`,
+            );
+        }
         await shot('07-draft-plan');
 
         await page.locator('#founder-planning-section input[type="checkbox"]').first().check();
@@ -537,6 +571,7 @@ async function main() {
         successPayload = {
             ok: true,
             authMode: config.authMode,
+            scenarioKey: scenario.scenarioKey,
             baseUrl: config.baseUrl,
             workspaceName: scenario.workspaceName,
             finalUrl: page.url(),

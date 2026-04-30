@@ -17,6 +17,7 @@ assert.equal(config.email, 'founder@example.com');
 assert.equal(config.password, 'OpenClaw!12345');
 assert.equal(config.baseUrl, 'http://127.0.0.1:3010');
 assert.equal(config.tenantName, 'Solo Founder Lab');
+assert.equal(config.scenarioKey, 'content-knowledge');
 assert.equal(config.edgePath, 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe');
 assert.equal(config.headless, true);
 assert.equal(config.cleanupAfterRun, false);
@@ -48,8 +49,15 @@ const selfBootstrapNoCleanupConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E
 assert.equal(selfBootstrapNoCleanupConfig.authMode, 'self_bootstrap');
 assert.equal(selfBootstrapNoCleanupConfig.cleanupAfterRun, false);
 
+const localServiceConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'cn-local-service-leadgen' });
+assert.equal(localServiceConfig.scenarioKey, 'local-service-leadgen');
+
+const saasOpsConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'saas' });
+assert.equal(saasOpsConfig.scenarioKey, 'saas-ops-automation');
+
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_EMAIL: 'founder@example.com' }), /provided together/);
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_PASSWORD: 'OpenClaw!12345' }), /provided together/);
+assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'unknown-scenario' }), /Unsupported/);
 
 const scenario = buildFounderMainlineE2eScenario('2026-04-24T19-40-00-000Z');
 
@@ -62,5 +70,21 @@ assert.match(scenario.businessBrief, /founder growth studio/i);
 assert.match(scenario.answers[0].answerText, /overseas chinese creators/i);
 assert.equal(scenario.answers.at(-1)?.groupId, 'team_gap_role_preference');
 assert.match(scenario.answers.at(-1)?.answerText || '', /founder PM support/i);
+assert.equal(scenario.scenarioKey, 'content-knowledge');
+assert.ok(scenario.expectedDraftTexts.includes('Scenario rationale'));
+
+const localServiceScenario = buildFounderMainlineE2eScenario('2026-04-24T19-40-00-000Z', 'local-service-leadgen');
+assert.equal(localServiceScenario.scenarioKey, 'local-service-leadgen');
+assert.match(localServiceScenario.businessBrief, /local service/i);
+assert.match(localServiceScenario.coreOffer, /local service/i);
+assert.ok(localServiceScenario.expectedAgentNames.includes('Customer Follow-up Lead'));
+assert.ok(localServiceScenario.expectedDraftTexts.includes('预约转化'));
+
+const saasOpsScenario = buildFounderMainlineE2eScenario('2026-04-24T19-40-00-000Z', 'saas-ops-automation');
+assert.equal(saasOpsScenario.scenarioKey, 'saas-ops-automation');
+assert.match(saasOpsScenario.businessBrief, /SaaS/i);
+assert.match(saasOpsScenario.coreOffer, /SaaS/i);
+assert.ok(saasOpsScenario.expectedAgentNames.includes('Project Chief of Staff'));
+assert.ok(saasOpsScenario.expectedDraftTexts.includes('客户成功'));
 
 console.log('founderMainlineE2eRuntime tests passed');
