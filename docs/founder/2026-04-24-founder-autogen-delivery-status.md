@@ -22,6 +22,7 @@ Latest status refresh:
 - 2026-04-30: the scenario selector now also detects local-service lead-generation briefs and generates a `cn-local-service-leadgen` scaffold for appointments, booking conversion, customer follow-up, and delivery scheduling.
 - 2026-04-30: the live founder E2E runner can now select a scenario through `FOUNDER_E2E_SCENARIO`, and the local-service scenario was verified through the real browser path.
 - 2026-05-01: the scenario selector now detects cross-border ecommerce briefs and generates a `cn-cross-border-ecommerce-ops` scaffold for product listings, marketplace/channel distribution, inventory fulfillment, after-sales, reviews, and repeat purchase follow-up.
+- 2026-05-01: the live founder E2E runner now writes an annotated onboarding walkthrough markdown file that links the run screenshots and explains the operator checkpoint for each stage.
 
 Related founder docs:
 
@@ -103,6 +104,7 @@ Notes about the browser runner:
 
 - It installs `playwright-core@1.59.1` into a temporary runtime directory on demand instead of adding Playwright to repo dependencies.
 - It launches the system Microsoft Edge executable and writes screenshots to `output/playwright/`.
+- It also writes `output/playwright/founder-onboarding-walkthrough.md`, an annotated markdown walkthrough that links the screenshots from the same run. Override it with `FOUNDER_E2E_WALKTHROUGH_PATH` when a release needs a named artifact.
 - Set `FOUNDER_E2E_SCENARIO` to `content-knowledge`, `saas-ops-automation`, `local-service-leadgen`, or `cross-border-ecommerce` to choose which founder scenario the browser runner exercises. The default remains `content-knowledge`.
 - With no `FOUNDER_E2E_*` credentials it self-bootstraps a disposable founder account, creates a disposable company, seeds a tenant-scoped dummy model when needed, and then runs the founder mainline flow.
 - That self-bootstrap default now also deletes the disposable account, company, workspace, agents, and dummy model at the end of the run so the local database stays clean.
@@ -246,6 +248,7 @@ Screenshot artifacts:
 - `output/playwright/founder-natural-dashboard-full.png`
 - `output/playwright/founder-dashboard-final.png`
 - `output/playwright/founder-dashboard-full.png`
+- `output/playwright/founder-onboarding-walkthrough.md` (generated per run, with reviewer checklist and screenshot captions)
 
 ## Known Caveats
 
@@ -259,4 +262,4 @@ Screenshot artifacts:
 - Use `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` for a dry-run cleanup summary, then add `--wipe-tenant-agents --yes` when you want to reset a dedicated founder demo tenant before rerunning the flow.
 - Use `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` if an interrupted or pre-fix self-bootstrap run leaves disposable founder E2E artifacts behind.
 - Continue expanding the scenario library beyond the current four scaffolds when a new founder business family has clear signals, role composition, and live E2E coverage.
-- Expand the founder onboarding guide with annotated screenshots once the UI copy stabilizes.
+- Keep the screenshot walkthrough annotations aligned whenever founder onboarding, materialization, dashboard copy, or E2E screenshot checkpoints change.

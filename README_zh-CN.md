@@ -121,6 +121,8 @@ Clawith 现在已经提供 founder 导向的主流程，可以先持久化 found
 
 真实浏览器 founder runner 现在可以通过 `FOUNDER_E2E_SCENARIO=content-knowledge|saas-ops-automation|local-service-leadgen|cross-border-ecommerce` 指定要验证的公司骨架。
 
+每次 live runner 执行都会写出截图，并额外生成 `output/playwright/founder-onboarding-walkthrough.md` 作为带注释的操作者走查；如果某次发布需要独立命名，可以用 `FOUNDER_E2E_WALKTHROUGH_PATH` 覆盖。
+
 参考文档：
 
 - [Founder 实现规划](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)

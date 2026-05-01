@@ -16,6 +16,7 @@ export interface FounderMainlineE2eConfig {
     headless: boolean;
     runtimeDir: string;
     screenshotDir: string;
+    walkthroughPath: string;
 }
 
 export interface FounderMainlineE2eAnswer {
@@ -40,6 +41,33 @@ export interface FounderMainlineE2eScenario {
     expectedAgentNames: string[];
     minimumRelationshipCount: number;
     minimumTriggerCount: number;
+}
+
+export interface FounderMainlineE2eWalkthroughScreenshot {
+    name: string;
+    title: string;
+    note: string;
+    relativePath: string;
+}
+
+export interface FounderMainlineE2eWalkthroughMetrics {
+    finalUrl?: string;
+    headline?: string;
+    agentCards?: string[];
+    blockerCount?: number | null;
+    relationshipCount?: number | null;
+    triggerCount?: number | null;
+}
+
+export interface FounderMainlineE2eWalkthroughInput {
+    runId: string;
+    baseUrl: string;
+    scenario: FounderMainlineE2eScenario;
+    status: 'passed' | 'failed';
+    screenshots: FounderMainlineE2eWalkthroughScreenshot[];
+    metrics?: FounderMainlineE2eWalkthroughMetrics | null;
+    errorMessage?: string;
+    cleanupSummary?: unknown;
 }
 
 function requireEnv(value: string | undefined, name: string): string {
@@ -156,6 +184,10 @@ export function buildFounderMainlineE2eConfig(
         headless: !isHeaded(env.FOUNDER_E2E_HEADED),
         runtimeDir: readOptionalEnv(env.FOUNDER_E2E_RUNTIME_DIR, 'openclaw-founder-e2e-runtime'),
         screenshotDir: readOptionalEnv(env.FOUNDER_E2E_SCREENSHOT_DIR, 'output/playwright'),
+        walkthroughPath: readOptionalEnv(
+            env.FOUNDER_E2E_WALKTHROUGH_PATH,
+            'output/playwright/founder-onboarding-walkthrough.md',
+        ),
     };
 }
 
@@ -397,4 +429,96 @@ export function buildFounderMainlineE2eScenario(
     }
 
     return buildContentKnowledgeScenario(runId);
+}
+
+function escapeMarkdownTableCell(value: string): string {
+    return value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+}
+
+function formatOptionalMetric(value: number | null | undefined): string {
+    return value === null || value === undefined ? 'not captured' : String(value);
+}
+
+function formatCleanupSummary(cleanupSummary: unknown): string {
+    if (!cleanupSummary || typeof cleanupSummary !== 'object') {
+        return 'not available';
+    }
+
+    const entries = Object.entries(cleanupSummary as Record<string, unknown>)
+        .filter(([, value]) => typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean')
+        .map(([key, value]) => `${key}: ${String(value)}`);
+
+    return entries.length > 0 ? entries.join(', ') : 'available';
+}
+
+export function buildFounderMainlineE2eWalkthroughMarkdown(
+    input: FounderMainlineE2eWalkthroughInput,
+): string {
+    const metrics = input.metrics || {};
+    const lines = [
+        '# Founder Onboarding Screenshot Walkthrough',
+        '',
+        `Generated from the live founder E2E runner for scenario \`${input.scenario.scenarioKey}\`.`,
+        '',
+        '## Run Summary',
+        '',
+        `- Run ID: \`${input.runId}\``,
+        `- Status: \`${input.status}\``,
+        `- Base URL: \`${input.baseUrl}\``,
+        `- Workspace: \`${input.scenario.workspaceName}\``,
+        `- Final URL: \`${metrics.finalUrl || 'not captured'}\``,
+        `- Cleanup: ${formatCleanupSummary(input.cleanupSummary)}`,
+    ];
+
+    if (input.errorMessage) {
+        lines.push(`- Error: ${input.errorMessage}`);
+    }
+
+    lines.push(
+        '',
+        '## What This Scenario Proves',
+        '',
+        `- Business brief: ${input.scenario.businessBrief}`,
+        `- Core offer: ${input.scenario.coreOffer}`,
+        `- Acquisition channel: ${input.scenario.acquisitionChannel}`,
+        `- Expected draft evidence: ${input.scenario.expectedDraftTexts.map((item) => `\`${item}\``).join(', ')}`,
+        `- Expected agents: ${input.scenario.expectedAgentNames.map((item) => `\`${item}\``).join(', ')}`,
+        '',
+        '## Dashboard Evidence',
+        '',
+        `- Headline: ${metrics.headline || 'not captured'}`,
+        `- Agent cards: ${(metrics.agentCards || []).map((item) => `\`${item}\``).join(', ') || 'not captured'}`,
+        `- Blockers: ${formatOptionalMetric(metrics.blockerCount)}`,
+        `- Relationships: ${formatOptionalMetric(metrics.relationshipCount)}`,
+        `- Starter triggers: ${formatOptionalMetric(metrics.triggerCount)}`,
+        '',
+        '## Annotated Screenshots',
+        '',
+    );
+
+    if (input.screenshots.length === 0) {
+        lines.push('No screenshots were captured for this run.');
+    } else {
+        lines.push('| Checkpoint | Operator note | Screenshot |');
+        lines.push('|---|---|---|');
+        for (const screenshot of input.screenshots) {
+            lines.push(
+                `| ${escapeMarkdownTableCell(screenshot.title)} | ${escapeMarkdownTableCell(screenshot.note)} | ![${escapeMarkdownTableCell(screenshot.title)}](${screenshot.relativePath}) |`,
+            );
+        }
+    }
+
+    lines.push(
+        '',
+        '## Manual Review Checklist',
+        '',
+        '1. Confirm the workspace route includes a `workspaceId` after creation.',
+        '2. Confirm the draft review explains scenario rationale, matched signals, template preview, and skill-pack preview.',
+        '3. Confirm materialization reaches `/founder-workspace/dashboard` with the same `workspaceId`.',
+        '4. Confirm dashboard blockers are `0` and relationship / starter-trigger counts are non-zero.',
+        '5. Confirm every expected agent role is visible and understandable to a non-technical founder.',
+        '',
+    );
+
+    return `${lines.join('\n')}\n`;
 }

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
     buildFounderMainlineE2eConfig,
     buildFounderMainlineE2eScenario,
+    buildFounderMainlineE2eWalkthroughMarkdown,
     buildFounderDashboardUrl,
     buildFounderWorkspaceUrl,
 } from '../../src/services/founderMainlineE2e.ts';
@@ -24,6 +25,76 @@ const SELF_BOOTSTRAP_MODEL_PAYLOAD = {
     supports_vision: false,
     max_output_tokens: 4096,
     request_timeout: 120,
+};
+const WALKTHROUGH_ANNOTATIONS = {
+    '01-login': {
+        title: 'Login entry',
+        note: 'Confirms the browser starts from the public login surface before founder self-bootstrap or credential login.',
+    },
+    '02-tenant-modal': {
+        title: 'Tenant selection',
+        note: 'For reused founder accounts, confirms the intended company tenant is selected before workspace creation.',
+    },
+    '02-self-bootstrap-register': {
+        title: 'Self-bootstrap registration',
+        note: 'Shows the disposable founder account path used when no explicit E2E credentials are provided.',
+    },
+    '02b-self-bootstrap-company-setup': {
+        title: 'Disposable company setup',
+        note: 'Confirms the self-bootstrap flow creates a clean company tenant for the run.',
+    },
+    '02c-self-bootstrap-verify-email': {
+        title: 'Email verification gate',
+        note: 'Documents whether local registration temporarily visits the verification screen before continuing.',
+    },
+    '02d-self-bootstrap-model-seeded': {
+        title: 'Tenant model bootstrap',
+        note: 'Confirms a dummy tenant-scoped planning model was seeded only for this disposable verification run.',
+    },
+    '02d-self-bootstrap-ready': {
+        title: 'Authenticated founder session',
+        note: 'Confirms the browser has an authenticated founder session before entering Founder Workspace.',
+    },
+    '03-post-login': {
+        title: 'Post-login landing state',
+        note: 'Captures the first authenticated page so operators can diagnose routing or tenant-selection drift.',
+    },
+    '04-founder-workspace': {
+        title: 'Founder Workspace entry',
+        note: 'Shows the founder-specific entry page before any workspace shell is created.',
+    },
+    '05-workspace-created': {
+        title: 'Workspace shell created',
+        note: 'Confirms core offer, acquisition channel, and brief have been saved and the URL now carries a workspaceId.',
+    },
+    '05b-founder-workspace-deeplink': {
+        title: 'Workspace deep link reload',
+        note: 'Confirms the newly created workspace can be reopened by its exact workspaceId.',
+    },
+    '06-interview-filled': {
+        title: 'Founder interview completed',
+        note: 'Shows the eight business interview answers that brief the planning model like a chief of staff.',
+    },
+    '07-draft-plan': {
+        title: 'Draft review with scenario explanation',
+        note: 'Confirms the draft explains scenario rationale, matched signals, template preview, and skill-pack preview before approval.',
+    },
+    '08-ready-for-materialize': {
+        title: 'Materialization confirmation',
+        note: 'Confirms the approved draft has reached deploy prep readiness and exposes the scaffold generation action.',
+    },
+    '09-dashboard': {
+        title: 'Founder dashboard after materialization',
+        note: 'Shows the generated multi-agent operating surface, including agents, relationships, triggers, and blockers.',
+    },
+    '09b-dashboard-deeplink': {
+        title: 'Dashboard deep link reload',
+        note: 'Confirms the dashboard can be reopened by workspaceId and still hydrates the generated company scaffold.',
+    },
+    error: {
+        title: 'Failure state',
+        note: 'Captured automatically when the E2E flow fails before completing the dashboard assertions.',
+    },
 };
 const require = createRequire(import.meta.url);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +113,23 @@ function resolveAbsolutePath(basePath, fallbackRoot) {
         return basePath;
     }
     return path.resolve(fallbackRoot, basePath);
+}
+
+function toMarkdownPath(sourcePath) {
+    return sourcePath.replace(/\\/g, '/');
+}
+
+function buildScreenshotMarkdownPath(walkthroughPath, screenshotPath) {
+    const relativePath = path.relative(path.dirname(walkthroughPath), screenshotPath);
+    const normalized = toMarkdownPath(relativePath || path.basename(screenshotPath));
+    return normalized.startsWith('.') ? normalized : `./${normalized}`;
+}
+
+function getWalkthroughAnnotation(name) {
+    return WALKTHROUGH_ANNOTATIONS[name] || {
+        title: name,
+        note: 'Additional screenshot captured by the founder E2E runner.',
+    };
 }
 
 function ensurePlaywrightRuntime(runtimeDir) {
@@ -399,12 +487,14 @@ async function main() {
     const scenario = buildFounderMainlineE2eScenario(runId, config.scenarioKey);
     const runtimeDir = resolveAbsolutePath(config.runtimeDir, os.tmpdir());
     const screenshotDir = resolveAbsolutePath(config.screenshotDir, repoRoot);
+    const walkthroughPath = resolveAbsolutePath(config.walkthroughPath, repoRoot);
 
     if (!fs.existsSync(config.edgePath)) {
         throw new Error(`Microsoft Edge executable was not found at ${config.edgePath}`);
     }
 
     ensureDirectory(screenshotDir);
+    ensureDirectory(path.dirname(walkthroughPath));
 
     const { chromium } = ensurePlaywrightRuntime(runtimeDir);
     const browser = await chromium.launch({
@@ -423,6 +513,7 @@ async function main() {
     const page = await context.newPage();
     const consoleMessages = [];
     const requestFailures = [];
+    const screenshotLog = [];
 
     page.on('console', (message) => {
         consoleMessages.push(`[${message.type()}] ${message.text()}`);
@@ -432,9 +523,17 @@ async function main() {
     });
 
     async function shot(name) {
+        const screenshotPath = path.join(screenshotDir, `${runId}-${name}.png`);
         await page.screenshot({
-            path: path.join(screenshotDir, `${runId}-${name}.png`),
+            path: screenshotPath,
             fullPage: true,
+        });
+        const annotation = getWalkthroughAnnotation(name);
+        screenshotLog.push({
+            name,
+            path: screenshotPath,
+            title: annotation.title,
+            note: annotation.note,
         });
     }
 
@@ -583,6 +682,7 @@ async function main() {
             requestFailures,
             consoleMessages: consoleMessages.slice(-20),
             screenshotsPrefix: path.join(screenshotDir, `${runId}-*.png`),
+            walkthroughPath,
         };
     } catch (error) {
         primaryError = error;
@@ -596,6 +696,7 @@ async function main() {
             requestFailures,
             consoleMessages: consoleMessages.slice(-40),
             screenshotsPrefix: path.join(screenshotDir, `${runId}-*.png`),
+            walkthroughPath,
         }, null, 2));
     } finally {
         if (config.cleanupAfterRun) {
@@ -616,6 +717,42 @@ async function main() {
         }
         await context.close();
         await browser.close();
+    }
+
+    try {
+        const walkthroughMarkdown = buildFounderMainlineE2eWalkthroughMarkdown({
+            runId,
+            baseUrl: config.baseUrl,
+            scenario,
+            status: primaryError ? 'failed' : 'passed',
+            screenshots: screenshotLog.map((screenshot) => ({
+                name: screenshot.name,
+                title: screenshot.title,
+                note: screenshot.note,
+                relativePath: buildScreenshotMarkdownPath(walkthroughPath, screenshot.path),
+            })),
+            metrics: successPayload
+                ? {
+                    finalUrl: successPayload.finalUrl,
+                    headline: successPayload.headline,
+                    agentCards: successPayload.agentCards,
+                    blockerCount: successPayload.blockerCount,
+                    relationshipCount: successPayload.relationshipCount,
+                    triggerCount: successPayload.triggerCount,
+                }
+                : null,
+            errorMessage: primaryError instanceof Error ? primaryError.message : primaryError ? String(primaryError) : '',
+            cleanupSummary,
+        });
+        fs.writeFileSync(walkthroughPath, walkthroughMarkdown, 'utf8');
+    } catch (error) {
+        if (primaryError === null) {
+            primaryError = error;
+        } else {
+            console.error(
+                `Founder walkthrough write also failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     if (primaryError) {

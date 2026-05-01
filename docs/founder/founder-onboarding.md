@@ -251,6 +251,18 @@ cd frontend
 npm run test:e2e:founder
 ```
 
+The browser runner also writes an annotated screenshot walkthrough to:
+
+- `output/playwright/founder-onboarding-walkthrough.md`
+
+That markdown file links the screenshots from the same run and explains what an operator should confirm at each checkpoint: login, self-bootstrap, workspace creation, interview completion, draft scenario rationale, materialization readiness, dashboard result, and dashboard deep-link reload.
+
+If you want the walkthrough somewhere else, set:
+
+```bash
+FOUNDER_E2E_WALKTHROUGH_PATH=output/playwright/my-founder-walkthrough.md
+```
+
 That default path now:
 
 - registers a disposable founder account

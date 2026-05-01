@@ -22,6 +22,7 @@
 - 2026-04-30：场景选择器现在也可以识别本地服务获客类 brief，并生成 `cn-local-service-leadgen` 骨架，覆盖预约转化、客户跟进和交付排期。
 - 2026-04-30：live founder E2E runner 现在可以通过 `FOUNDER_E2E_SCENARIO` 选择场景，本地服务获客场景也已经通过真实浏览器链路验证。
 - 2026-05-01：场景选择器现在也可以识别跨境电商类 brief，并生成 `cn-cross-border-ecommerce-ops` 骨架，覆盖商品 listing、跨境渠道分发、库存履约、订单售后、评价和复购跟进。
+- 2026-05-01：live founder E2E runner 现在会自动写出带注释的 onboarding 走查 markdown，引用同次运行截图，并解释每个阶段的操作者检查点。
 
 相关 founder 文档：
 
@@ -103,6 +104,7 @@ npm run test:e2e:founder
 
 - 按需把 `playwright-core@1.59.1` 安装到临时 runtime 目录，不新增仓库依赖。
 - 直接调用本机 Microsoft Edge，并把截图输出到 `output/playwright/`。
+- 同时写出 `output/playwright/founder-onboarding-walkthrough.md`，这是一份引用同次运行截图的带注释 markdown 走查；如果某次发布需要命名产物，可用 `FOUNDER_E2E_WALKTHROUGH_PATH` 覆盖。
 - 可通过 `FOUNDER_E2E_SCENARIO` 选择 `content-knowledge`、`saas-ops-automation`、`local-service-leadgen` 或 `cross-border-ecommerce`；默认仍为 `content-knowledge`。
 - 如果没有显式提供 `FOUNDER_E2E_*` 凭据，它会自动注册一次性 founder 账号、创建一次性公司、在需要时为该 tenant 注入一个验证用 dummy model，然后继续跑完整 founder 主链路。
 - 这条 self-bootstrap 默认路径现在还会在断言完成后自动删除一次性账号、公司、workspace、agents 和 dummy model，避免本地数据库持续堆积脏数据。
@@ -246,6 +248,7 @@ Dashboard 上确认出现的 4 个 agent：
 - `output/playwright/founder-natural-dashboard-full.png`
 - `output/playwright/founder-dashboard-final.png`
 - `output/playwright/founder-dashboard-full.png`
+- `output/playwright/founder-onboarding-walkthrough.md`（每次运行生成，包含审核清单和截图注释）
 
 ## 当前已知说明
 
@@ -259,4 +262,4 @@ Dashboard 上确认出现的 4 个 agent：
 - 可以先用 `cd backend && python -m app.scripts.reset_founder_demo_tenant --tenant-slug <slug>` 做 dry-run，确认范围后再追加 `--wipe-tenant-agents --yes`，用来重置专用 founder demo tenant。
 - 如果某次中断或修复前的 self-bootstrap 运行留下了一次性 founder E2E 脏数据，可以执行 `cd backend && python -m app.scripts.cleanup_founder_self_bootstrap --yes` 做补扫。
 - 当新的创业业务族具备明确识别信号、角色组合和 live E2E 覆盖后，继续扩展当前四类场景之外的 founder 场景库。
-- 等 UI 文案稳定后，可以继续给 founder onboarding 指南补带注释的截图版本。
+- 之后如果 founder onboarding、materialization、dashboard 文案或 E2E 截图节点变化，要同步维护截图走查里的注释。

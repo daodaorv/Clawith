@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     buildFounderMainlineE2eConfig,
     buildFounderMainlineE2eScenario,
+    buildFounderMainlineE2eWalkthroughMarkdown,
     buildFounderDashboardUrl,
     buildFounderWorkspaceUrl,
 } from '../src/services/founderMainlineE2e.ts';
@@ -24,6 +25,7 @@ assert.equal(config.cleanupAfterRun, false);
 assert.equal(config.modelLabel, '');
 assert.match(config.runtimeDir, /openclaw-founder-e2e-runtime/i);
 assert.match(config.screenshotDir, /output[\\/]playwright$/i);
+assert.match(config.walkthroughPath, /output[\\/]playwright[\\/]founder-onboarding-walkthrough\.md$/i);
 
 assert.equal(
     buildFounderWorkspaceUrl(config.baseUrl, 'workspace-123'),
@@ -48,6 +50,11 @@ assert.equal(selfBootstrapConfig.cleanupAfterRun, true);
 const selfBootstrapNoCleanupConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SKIP_CLEANUP: '1' });
 assert.equal(selfBootstrapNoCleanupConfig.authMode, 'self_bootstrap');
 assert.equal(selfBootstrapNoCleanupConfig.cleanupAfterRun, false);
+
+const customWalkthroughConfig = buildFounderMainlineE2eConfig({
+    FOUNDER_E2E_WALKTHROUGH_PATH: 'output/custom-founder-walkthrough.md',
+});
+assert.equal(customWalkthroughConfig.walkthroughPath, 'output/custom-founder-walkthrough.md');
 
 const localServiceConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'cn-local-service-leadgen' });
 assert.equal(localServiceConfig.scenarioKey, 'local-service-leadgen');
@@ -96,5 +103,33 @@ assert.match(ecommerceScenario.businessBrief, /cross-border ecommerce/i);
 assert.match(ecommerceScenario.coreOffer, /ecommerce/i);
 assert.ok(ecommerceScenario.expectedAgentNames.includes('Global Distribution Lead'));
 assert.ok(ecommerceScenario.expectedDraftTexts.includes('cross-border ecommerce'));
+
+const walkthroughMarkdown = buildFounderMainlineE2eWalkthroughMarkdown({
+    runId: '2026-05-01T09-35-32-727Z',
+    baseUrl: 'http://127.0.0.1:3010',
+    scenario: ecommerceScenario,
+    status: 'passed',
+    screenshots: [
+        {
+            name: '07-draft-plan',
+            title: 'Draft review with scenario explanation',
+            note: 'Confirms scenario rationale before materialization.',
+            relativePath: './2026-05-01T09-35-32-727Z-07-draft-plan.png',
+        },
+    ],
+    metrics: {
+        finalUrl: 'http://127.0.0.1:3010/founder-workspace/dashboard?workspaceId=abc',
+        headline: 'Your company currently has 5 agents',
+        agentCards: ['Founder Copilot', 'Global Distribution Lead'],
+        blockerCount: 0,
+        relationshipCount: 4,
+        triggerCount: 5,
+    },
+    cleanupSummary: { deleted_workspaces: 1, ok: true },
+});
+assert.match(walkthroughMarkdown, /Founder Onboarding Screenshot Walkthrough/);
+assert.match(walkthroughMarkdown, /cross-border-ecommerce/);
+assert.match(walkthroughMarkdown, /Draft review with scenario explanation/);
+assert.match(walkthroughMarkdown, /deleted_workspaces: 1/);
 
 console.log('founderMainlineE2eRuntime tests passed');

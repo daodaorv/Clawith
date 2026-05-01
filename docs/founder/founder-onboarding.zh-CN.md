@@ -251,6 +251,18 @@ cd frontend
 npm run test:e2e:founder
 ```
 
+浏览器 runner 还会自动写出一份带注释的截图走查文档：
+
+- `output/playwright/founder-onboarding-walkthrough.md`
+
+这份 markdown 会引用同一次运行产生的截图，并说明操作者在每个节点应该确认什么：登录、自举注册、workspace 创建、访谈填写、草案场景命中说明、materialize 前确认、dashboard 结果，以及 dashboard deep link 重新打开。
+
+如果你希望把走查文档输出到其他位置，可以设置：
+
+```bash
+FOUNDER_E2E_WALKTHROUGH_PATH=output/playwright/my-founder-walkthrough.md
+```
+
 这条默认路径现在会自动：
 
 - 注册一次性的 founder 测试账号

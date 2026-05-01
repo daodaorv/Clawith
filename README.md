@@ -126,6 +126,8 @@ Draft review now surfaces the scenario rationale, matched signals, priority focu
 
 The live founder browser runner can exercise a specific scaffold with `FOUNDER_E2E_SCENARIO=content-knowledge|saas-ops-automation|local-service-leadgen|cross-border-ecommerce`.
 
+Each live runner execution writes screenshots plus an annotated operator walkthrough at `output/playwright/founder-onboarding-walkthrough.md`; use `FOUNDER_E2E_WALKTHROUGH_PATH` when you want a release-specific walkthrough filename.
+
 Reference docs:
 
 - [Founder implementation plan](docs/superpowers/plans/2026-04-23-founder-autogen-framework.md)
