@@ -13,7 +13,7 @@ on:
         default: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
         type: string
       scenario:
-        description: "Founder scenario to run: content-knowledge, saas-ops-automation, or local-service-leadgen"
+        description: "Founder scenario to run: content-knowledge, saas-ops-automation, local-service-leadgen, or cross-border-ecommerce"
         required: false
         default: "content-knowledge"
         type: choice
@@ -21,6 +21,7 @@ on:
           - content-knowledge
           - saas-ops-automation
           - local-service-leadgen
+          - cross-border-ecommerce
       headed:
         description: "Run with a visible browser window for debugging"
         required: false

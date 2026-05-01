@@ -5,7 +5,10 @@
   "display_name_en": "Founder Strategy Pack",
   "business_goal": "把中文业务目标拆成可执行的出海内容、增长与优先级方案。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "recommended_roles": [
     "Founder Copilot"

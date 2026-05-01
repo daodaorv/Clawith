@@ -11,11 +11,14 @@ SAAS_OPS_SCENARIO_ID = "cn-saas-ops-automation"
 SAAS_OPS_SCENARIO_NAME_ZH = "中文团队做 SaaS / 运营自动化业务"
 LOCAL_SERVICE_SCENARIO_ID = "cn-local-service-leadgen"
 LOCAL_SERVICE_SCENARIO_NAME_ZH = "中文团队做本地服务获客 / 预约转化业务"
+CROSS_BORDER_ECOMMERCE_SCENARIO_ID = "cn-cross-border-ecommerce-ops"
+CROSS_BORDER_ECOMMERCE_SCENARIO_NAME_ZH = "中文团队做跨境电商运营业务"
 
 SCENARIO_NAME_ZH_BY_ID = {
     FIRST_SCENARIO_ID: FIRST_SCENARIO_NAME_ZH,
     SAAS_OPS_SCENARIO_ID: SAAS_OPS_SCENARIO_NAME_ZH,
     LOCAL_SERVICE_SCENARIO_ID: LOCAL_SERVICE_SCENARIO_NAME_ZH,
+    CROSS_BORDER_ECOMMERCE_SCENARIO_ID: CROSS_BORDER_ECOMMERCE_SCENARIO_NAME_ZH,
 }
 
 _SKILL_PACKS: list[dict[str, Any]] = [
@@ -25,7 +28,12 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "创业策略包",
         "display_name_en": "Founder Strategy Pack",
         "business_goal": "把中文业务目标拆成可执行的出海内容、增长与优先级方案。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
+        "applicable_scenarios": [
+            FIRST_SCENARIO_ID,
+            SAAS_OPS_SCENARIO_ID,
+            LOCAL_SERVICE_SCENARIO_ID,
+            CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
+        ],
         "recommended_roles": ["Founder Copilot"],
         "included_skills": ["web-research", "competitive-analysis", "data-analysis", "content-writing"],
         "required_integrations": [],
@@ -48,7 +56,12 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "内容生产包",
         "display_name_en": "Content Production Pack",
         "business_goal": "完成选题、资料整理、结构化写作与内容初稿生成。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
+        "applicable_scenarios": [
+            FIRST_SCENARIO_ID,
+            SAAS_OPS_SCENARIO_ID,
+            LOCAL_SERVICE_SCENARIO_ID,
+            CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
+        ],
         "recommended_roles": ["Content Strategy Lead", "Global Distribution Lead"],
         "included_skills": ["content-writing", "web-research", "competitive-analysis"],
         "required_integrations": [],
@@ -71,7 +84,7 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "海外分发包",
         "display_name_en": "Global Distribution Pack",
         "business_goal": "支持渠道筛选、差异化分发文案和分发结果复盘。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID],
+        "applicable_scenarios": [FIRST_SCENARIO_ID, CROSS_BORDER_ECOMMERCE_SCENARIO_ID],
         "recommended_roles": ["Global Distribution Lead"],
         "included_skills": ["content-writing", "competitive-analysis", "data-analysis"],
         "required_integrations": [],
@@ -94,7 +107,12 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "客服跟单包",
         "display_name_en": "Customer Follow-up Pack",
         "business_goal": "整理用户反馈、跟进线索并沉淀常见问题处理话术。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
+        "applicable_scenarios": [
+            FIRST_SCENARIO_ID,
+            SAAS_OPS_SCENARIO_ID,
+            LOCAL_SERVICE_SCENARIO_ID,
+            CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
+        ],
         "recommended_roles": ["Customer Follow-up Lead"],
         "included_skills": ["content-writing", "data-analysis"],
         "required_integrations": [],
@@ -117,7 +135,12 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "display_name_zh": "报告输出包",
         "display_name_en": "Report Output Pack",
         "business_goal": "把分散分析结果整理成对管理层可读的中文报告。",
-        "applicable_scenarios": [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID],
+        "applicable_scenarios": [
+            FIRST_SCENARIO_ID,
+            SAAS_OPS_SCENARIO_ID,
+            LOCAL_SERVICE_SCENARIO_ID,
+            CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
+        ],
         "recommended_roles": ["Founder Copilot", "Project Chief of Staff"],
         "included_skills": ["data-analysis", "content-writing"],
         "required_integrations": [],
@@ -131,6 +154,29 @@ _SKILL_PACKS: list[dict[str, Any]] = [
         "acceptance_metrics": [
             "能把原始数据整理成结论清晰的中文报告。",
             "能明确下一步行动建议。",
+        ],
+        "status": "internal-preview",
+    },
+    {
+        "pack_id": "ecommerce-ops-pack",
+        "version": "v1",
+        "display_name_zh": "跨境电商运营包",
+        "display_name_en": "Cross-Border Ecommerce Ops Pack",
+        "business_goal": "支持商品 listing、跨境渠道节奏、库存履约、订单售后和复购复盘。",
+        "applicable_scenarios": [CROSS_BORDER_ECOMMERCE_SCENARIO_ID],
+        "recommended_roles": ["Global Distribution Lead", "Customer Follow-up Lead", "Project Chief of Staff"],
+        "included_skills": ["data-analysis", "content-writing", "competitive-analysis"],
+        "required_integrations": [],
+        "required_tools": ["llm", "spreadsheet", "crm", "analytics"],
+        "default_prompts_or_policies": [
+            "先区分商品、渠道、库存、履约和售后环节，再输出运营动作。",
+            "涉及价格、退款、平台政策、供应商承诺和合规 claims 时必须标记人工确认。",
+        ],
+        "compatibility_notes": "适合跨境电商运营排程、商品页优化和订单复盘，不直接代替人工操作店铺后台。",
+        "risk_level": "medium",
+        "acceptance_metrics": [
+            "能把商品页、渠道投放、库存履约和售后复购拆成清晰任务。",
+            "能指出平台政策、供应商承诺和退款相关的人工审批边界。",
         ],
         "status": "internal-preview",
     },

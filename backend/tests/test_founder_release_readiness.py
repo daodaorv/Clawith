@@ -20,8 +20,13 @@ def test_discover_founder_release_targets_stays_scoped_to_founder_files(tmp_path
     _touch(backend_dir / "app" / "services" / "founder_company_materializer.py")
     _touch(backend_dir / "app" / "services" / "founder_demo_reset.py")
     _touch(backend_dir / "app" / "services" / "agent_manager.py")
+    _touch(backend_dir / "app" / "duoduo" / "skill_packs.py")
+    _touch(backend_dir / "app" / "duoduo" / "template_library.py")
     _touch(backend_dir / "tests" / "test_founder_mainline_service.py")
     _touch(backend_dir / "tests" / "test_founder_company_wiring.py")
+    _touch(backend_dir / "tests" / "test_duoduo_catalog_registry.py")
+    _touch(backend_dir / "tests" / "test_duoduo_structured_catalog_consistency.py")
+    _touch(backend_dir / "tests" / "test_enterprise_duoduo_catalog_api.py")
     _touch(backend_dir / "tests" / "test_agents_founder_mainline_guard_api.py")
     _touch(backend_dir / "tests" / "test_agent_delete_api.py")
 
@@ -31,14 +36,22 @@ def test_discover_founder_release_targets_stays_scoped_to_founder_files(tmp_path
     _touch(frontend_dir / "tests" / "e2e" / "founderMainlineE2e.mjs")
 
     assert discover_founder_ruff_targets(backend_dir) == [
+        "app/duoduo/skill_packs.py",
+        "app/duoduo/template_library.py",
         "app/services/founder_company_materializer.py",
         "app/services/founder_demo_reset.py",
         "tests/test_agents_founder_mainline_guard_api.py",
+        "tests/test_duoduo_catalog_registry.py",
+        "tests/test_duoduo_structured_catalog_consistency.py",
+        "tests/test_enterprise_duoduo_catalog_api.py",
         "tests/test_founder_company_wiring.py",
         "tests/test_founder_mainline_service.py",
     ]
     assert discover_founder_backend_test_targets(backend_dir) == [
         "tests/test_agents_founder_mainline_guard_api.py",
+        "tests/test_duoduo_catalog_registry.py",
+        "tests/test_duoduo_structured_catalog_consistency.py",
+        "tests/test_enterprise_duoduo_catalog_api.py",
         "tests/test_founder_company_wiring.py",
         "tests/test_founder_mainline_service.py",
     ]

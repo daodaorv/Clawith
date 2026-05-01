@@ -121,6 +121,40 @@ def test_generate_founder_mainline_draft_plan_selects_local_service_leadgen_scen
     assert any(item.mapped_entity_key == "cn-local-service-leadgen" for item in plan.traceability)
 
 
+def test_generate_founder_mainline_draft_plan_selects_cross_border_ecommerce_scenario():
+    plan = generate_founder_mainline_draft_plan(
+        (
+            "We are building a cross-border ecommerce brand on Shopify, Amazon, and TikTok Shop. "
+            "The business goal is to coordinate product listings, global distribution, inventory, order fulfillment, "
+            "customer reviews, and repeat purchase operations for a solo founder."
+        ),
+        model_ready_context=_ready_model_context(),
+        answers=[
+            {"group_id": "market_target_users", "answer_text": "Overseas shoppers buying niche lifestyle products."},
+            {"group_id": "core_product_service", "answer_text": "Cross-border ecommerce products and bundles."},
+            {"group_id": "acquisition_distribution_channels", "answer_text": "Shopify, Amazon, TikTok Shop, ads, creators, and email."},
+            {"group_id": "conversion_sales_model", "answer_text": "Listing views to cart conversion to paid orders and repeat purchases."},
+            {"group_id": "delivery_service_model", "answer_text": "Supplier coordination, inventory checks, fulfillment, and after-sales support."},
+            {"group_id": "content_language_requirements", "answer_text": "Chinese planning with English product listings and customer replies."},
+            {
+                "group_id": "automation_human_boundary",
+                "answer_text": "Agents can draft listings and review replies; pricing, refunds, supplier commitments, and policy claims require human approval.",
+            },
+            {"group_id": "team_gap_role_preference", "answer_text": "Product listing operations, channel distribution, order ops, and review follow-up."},
+        ],
+    )
+
+    assert plan.scenario_id == "cn-cross-border-ecommerce-ops"
+    assert {"commerce-ops", "listing-distribution", "order-customer-ops"}.issubset(
+        {team.team_id for team in plan.teams}
+    )
+    assert {"Founder Copilot", "Global Distribution Lead", "Customer Follow-up Lead", "Project Chief of Staff"}.issubset(
+        {item.canonical_name for item in plan.template_recommendations}
+    )
+    assert "ecommerce-ops-pack" in {item.pack_id for item in plan.skill_pack_recommendations}
+    assert any(item.mapped_entity_key == "cn-cross-border-ecommerce-ops" for item in plan.traceability)
+
+
 def test_generate_founder_mainline_draft_plan_applies_correction_notes():
     plan = generate_founder_mainline_draft_plan(
         "Chinese-first global knowledge business with \u8ddf\u8fdb, \u54a8\u8be2, and \u8f6c\u5316 needs.",

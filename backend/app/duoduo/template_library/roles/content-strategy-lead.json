@@ -6,7 +6,10 @@
   "role_type": "content",
   "primary_goal": "围绕中文业务目标产出选题、结构、脚本和内容初稿。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "business_stage": [
     "0-1",

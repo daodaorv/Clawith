@@ -5,7 +5,10 @@
   "display_name_en": "Report Output Pack",
   "business_goal": "把分散分析结果整理成对管理层可读的中文报告。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "recommended_roles": [
     "Founder Copilot",

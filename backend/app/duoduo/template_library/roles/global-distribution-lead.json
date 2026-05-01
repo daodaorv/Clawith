@@ -6,7 +6,10 @@
   "role_type": "distribution",
   "primary_goal": "针对不同海外渠道输出分发版本、节奏与复盘建议。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "business_stage": [
     "0-1",

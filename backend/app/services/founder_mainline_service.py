@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 from app.duoduo.skill_packs import (
+    CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
     FIRST_SCENARIO_ID,
     LOCAL_SERVICE_SCENARIO_ID,
     SAAS_OPS_SCENARIO_ID,
@@ -150,6 +151,42 @@ LOCAL_SERVICE_SCENARIO_MARKERS = (
     "探店",
     "私域",
 )
+CROSS_BORDER_ECOMMERCE_SCENARIO_MARKERS = (
+    "cross-border ecommerce",
+    "cross border ecommerce",
+    "cross-border e-commerce",
+    "cross border e-commerce",
+    "ecommerce",
+    "e-commerce",
+    "shopify",
+    "amazon",
+    "tiktok shop",
+    "etsy",
+    "woocommerce",
+    "product listing",
+    "listings",
+    "marketplace",
+    "inventory",
+    "fulfillment",
+    "order fulfillment",
+    "supplier",
+    "suppliers",
+    "repeat purchase",
+    "customer reviews",
+    "跨境电商",
+    "电商",
+    "独立站",
+    "亚马逊",
+    "店铺",
+    "选品",
+    "商品页",
+    "库存",
+    "履约",
+    "订单",
+    "复购",
+    "评价",
+    "供应商",
+)
 
 
 def _find_template_by_name(role_templates: list[dict], canonical_name: str) -> dict:
@@ -176,6 +213,9 @@ def _select_founder_scenario_id(
         return explicit_scenario_id
 
     normalized_context = (business_context or "").casefold()
+    if any(marker.casefold() in normalized_context for marker in CROSS_BORDER_ECOMMERCE_SCENARIO_MARKERS):
+        return CROSS_BORDER_ECOMMERCE_SCENARIO_ID
+
     if any(marker.casefold() in normalized_context for marker in LOCAL_SERVICE_SCENARIO_MARKERS):
         return LOCAL_SERVICE_SCENARIO_ID
 
@@ -580,7 +620,10 @@ def generate_founder_mainline_draft_plan(
     distribution = _find_template_by_name(role_templates, "Global Distribution Lead")
     project = _find_template_by_name(role_templates, "Project Chief of Staff")
 
-    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+    if active_scenario_id == CROSS_BORDER_ECOMMERCE_SCENARIO_ID:
+        customer = _find_template_by_name(role_templates, "Customer Follow-up Lead")
+        selected_templates = [founder, content, distribution, project, customer]
+    elif active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
         customer = _find_template_by_name(role_templates, "Customer Follow-up Lead")
         selected_templates = [founder, content, customer, project]
     elif active_scenario_id == SAAS_OPS_SCENARIO_ID:
@@ -607,6 +650,13 @@ def generate_founder_mainline_draft_plan(
     if "founder-strategy-pack" in packs_by_id and "founder-strategy-pack" not in recommended_pack_ids:
         recommended_pack_ids.insert(0, "founder-strategy-pack")
 
+    if (
+        active_scenario_id == CROSS_BORDER_ECOMMERCE_SCENARIO_ID
+        and "ecommerce-ops-pack" in packs_by_id
+        and "ecommerce-ops-pack" not in recommended_pack_ids
+    ):
+        recommended_pack_ids.append("ecommerce-ops-pack")
+
     template_recommendations = [
         FounderMainlineTemplateRecommendation(
             template_key=item["template_key"],
@@ -629,7 +679,47 @@ def generate_founder_mainline_draft_plan(
             )
         )
 
-    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+    if active_scenario_id == CROSS_BORDER_ECOMMERCE_SCENARIO_ID:
+        teams = [
+            FounderMainlineTeamPlan(
+                team_id="founder-office",
+                team_name_zh="跨境电商主控办公室",
+                team_goal="负责确认选品方向、目标市场、平台优先级、毛利边界和人工审批规则。",
+                priority=1,
+                roles=[
+                    _to_role_plan(founder, "作为主控角色，负责把跨境电商目标拆成选品、渠道、履约和复购的可运行骨架。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="listing-distribution",
+                team_name_zh="商品页与渠道分发团队",
+                team_goal="负责商品卖点、listing 结构、创作者素材、广告/内容渠道节奏和跨平台分发复盘。",
+                priority=2,
+                roles=[
+                    _to_role_plan(content, "跨境电商需要把商品卖点、场景和评价转成可复用的 listing 与内容素材。"),
+                    _to_role_plan(distribution, "跨境电商需要按 Shopify、Amazon、TikTok Shop 等渠道适配分发节奏和复盘指标。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="commerce-ops",
+                team_name_zh="库存履约运营团队",
+                team_goal="负责把库存、供应商、订单履约、异常交付和周度运营报告整理成可追踪节奏。",
+                priority=3,
+                roles=[
+                    _to_role_plan(project, "跨境电商从商品上架到履约复盘需要明确库存、供应商、订单和异常升级节奏。"),
+                ],
+            ),
+            FounderMainlineTeamPlan(
+                team_id="order-customer-ops",
+                team_name_zh="订单售后与复购团队",
+                team_goal="负责订单问题分层、评价跟进、售后 FAQ、退款风险升级和复购触达建议。",
+                priority=4,
+                roles=[
+                    _to_role_plan(customer, "跨境电商需要保留订单售后、评价回复、退款风险和复购跟进闭环。"),
+                ],
+            ),
+        ]
+    elif active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
         teams = [
             FounderMainlineTeamPlan(
                 team_id="founder-office",
@@ -744,7 +834,39 @@ def generate_founder_mainline_draft_plan(
         ]
     )
 
-    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+    if active_scenario_id == CROSS_BORDER_ECOMMERCE_SCENARIO_ID:
+        priority_focus = ["选品与商品页", "跨境渠道分发", "库存履约", "订单售后与复购"]
+        relationships = [
+            FounderMainlineRelationship(
+                from_role="Founder Copilot",
+                to_role="Content Strategy Lead",
+                relationship_type="positioning_to_listing",
+                handoff_rule_zh="Founder Copilot 负责确认目标市场、选品边界和毛利目标，内容负责人接手商品卖点、listing 结构和素材角度。",
+                escalation_rule_zh="涉及定价、功效 claims、平台政策或供应商承诺时回到 Founder Copilot 和人工确认。",
+            ),
+            FounderMainlineRelationship(
+                from_role="Content Strategy Lead",
+                to_role="Global Distribution Lead",
+                relationship_type="listing_to_channel",
+                handoff_rule_zh="内容负责人沉淀商品页与素材版本，海外分发负责人接手 Shopify、Amazon、TikTok Shop 等渠道适配和复盘。",
+                escalation_rule_zh="渠道规则、广告预算、达人合作承诺或品牌风险必须升级给 Founder Copilot。",
+            ),
+            FounderMainlineRelationship(
+                from_role="Global Distribution Lead",
+                to_role="Project Chief of Staff",
+                relationship_type="channel_to_operations",
+                handoff_rule_zh="海外分发负责人输出渠道表现和销售节奏，项目督办负责人接手库存、供应商、履约和周度运营报告。",
+                escalation_rule_zh="库存不足、供应商延误、平台处罚或履约异常时必须人工接管。",
+            ),
+            FounderMainlineRelationship(
+                from_role="Project Chief of Staff",
+                to_role="Customer Follow-up Lead",
+                relationship_type="order_to_after_sales",
+                handoff_rule_zh="项目督办负责人同步订单与履约异常，客服跟单负责人接手售后 FAQ、评价回复、退款升级和复购触达建议。",
+                escalation_rule_zh="退款、赔付、平台争议、差评危机和法律/财务承诺必须人工确认。",
+            ),
+        ]
+    elif active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
         priority_focus = ["本地获客", "预约转化", "客户跟进", "交付排期"]
         relationships = [
             FounderMainlineRelationship(
@@ -836,7 +958,24 @@ def generate_founder_mainline_draft_plan(
 
     open_questions = _build_draft_plan_open_questions(brief, answer_map)
 
-    if active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
+    if active_scenario_id == CROSS_BORDER_ECOMMERCE_SCENARIO_ID:
+        business_goal = "围绕跨境电商选品、商品页、渠道分发、库存履约和订单售后生成首版 AI 公司骨架。"
+        summary_zh = "基于当前 brief，先生成 Founder 主控、商品页与渠道分发、库存履约运营、订单售后和复购跟进的首版团队草案。"
+        traceability = [
+            FounderMainlineTraceability(
+                source_text=combined_context,
+                extracted_signal="cross-border ecommerce / marketplace operations",
+                mapped_entity_type="scenario",
+                mapped_entity_key=active_scenario_id,
+            ),
+            FounderMainlineTraceability(
+                source_text=combined_context,
+                extracted_signal="listing + channel distribution + fulfillment + after-sales",
+                mapped_entity_type="team",
+                mapped_entity_key="founder-office/listing-distribution/commerce-ops/order-customer-ops",
+            ),
+        ]
+    elif active_scenario_id == LOCAL_SERVICE_SCENARIO_ID:
         business_goal = "围绕本地服务获客、预约转化和交付排期生成首版 AI 公司骨架。"
         summary_zh = "基于当前 brief，先生成 Founder 主控、本地获客内容、预约转化跟进和交付排期督办的首版团队草案。"
         traceability = [

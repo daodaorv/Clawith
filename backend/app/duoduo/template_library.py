@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.duoduo.skill_packs import (
+    CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
     FIRST_SCENARIO_ID,
     LOCAL_SERVICE_SCENARIO_ID,
     SAAS_OPS_SCENARIO_ID,
@@ -14,7 +15,12 @@ from app.duoduo.skill_packs import (
     list_skill_packs,
 )
 
-GENERAL_FOUNDER_SCENARIOS = [FIRST_SCENARIO_ID, SAAS_OPS_SCENARIO_ID, LOCAL_SERVICE_SCENARIO_ID]
+GENERAL_FOUNDER_SCENARIOS = [
+    FIRST_SCENARIO_ID,
+    SAAS_OPS_SCENARIO_ID,
+    LOCAL_SERVICE_SCENARIO_ID,
+    CROSS_BORDER_ECOMMERCE_SCENARIO_ID,
+]
 
 _COMMON_AUTONOMY_POLICY = {
     "read_files": "L1",

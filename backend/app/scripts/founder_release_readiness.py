@@ -27,6 +27,17 @@ class ReleaseReadinessStep:
     args: tuple[str, ...]
 
 
+FOUNDER_BACKEND_CATALOG_APP_TARGETS = (
+    Path("app/duoduo/skill_packs.py"),
+    Path("app/duoduo/template_library.py"),
+)
+FOUNDER_BACKEND_CATALOG_TEST_TARGETS = (
+    Path("tests/test_duoduo_catalog_registry.py"),
+    Path("tests/test_duoduo_structured_catalog_consistency.py"),
+    Path("tests/test_enterprise_duoduo_catalog_api.py"),
+)
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -45,6 +56,10 @@ def discover_founder_backend_test_targets(backend_dir: Path) -> list[str]:
     guard_test = tests_dir / "test_agents_founder_mainline_guard_api.py"
     if guard_test.exists():
         targets.append(guard_test)
+    for relative_path in FOUNDER_BACKEND_CATALOG_TEST_TARGETS:
+        target = backend_dir / relative_path
+        if target.exists():
+            targets.append(target)
     return _relative_paths(list(dict.fromkeys(targets)), from_dir=backend_dir)
 
 
@@ -54,10 +69,18 @@ def discover_founder_frontend_test_targets(frontend_dir: Path) -> list[str]:
 
 def discover_founder_ruff_targets(backend_dir: Path) -> list[str]:
     app_targets = list((backend_dir / "app").rglob("*founder*.py"))
+    for relative_path in FOUNDER_BACKEND_CATALOG_APP_TARGETS:
+        target = backend_dir / relative_path
+        if target.exists():
+            app_targets.append(target)
     test_targets = list((backend_dir / "tests").glob("test_founder*.py"))
     guard_test = backend_dir / "tests" / "test_agents_founder_mainline_guard_api.py"
     if guard_test.exists():
         test_targets.append(guard_test)
+    for relative_path in FOUNDER_BACKEND_CATALOG_TEST_TARGETS:
+        target = backend_dir / relative_path
+        if target.exists():
+            test_targets.append(target)
     return _relative_paths(list(dict.fromkeys(app_targets + test_targets)), from_dir=backend_dir)
 
 

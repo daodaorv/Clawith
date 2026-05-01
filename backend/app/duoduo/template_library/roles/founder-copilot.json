@@ -6,7 +6,10 @@
   "role_type": "strategy",
   "primary_goal": "把中文业务目标拆成阶段清晰、可部署的团队方案。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "business_stage": [
     "0-1",

@@ -5,7 +5,10 @@
   "display_name_en": "Customer Follow-up Pack",
   "business_goal": "整理用户反馈、跟进线索并沉淀常见问题处理话术。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "recommended_roles": [
     "Customer Follow-up Lead"

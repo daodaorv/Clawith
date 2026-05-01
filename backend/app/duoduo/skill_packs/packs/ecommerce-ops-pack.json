@@ -1,0 +1,38 @@
+{
+  "pack_id": "ecommerce-ops-pack",
+  "version": "v1",
+  "display_name_zh": "跨境电商运营包",
+  "display_name_en": "Cross-Border Ecommerce Ops Pack",
+  "business_goal": "支持商品 listing、跨境渠道节奏、库存履约、订单售后和复购复盘。",
+  "applicable_scenarios": [
+    "cn-cross-border-ecommerce-ops"
+  ],
+  "recommended_roles": [
+    "Global Distribution Lead",
+    "Customer Follow-up Lead",
+    "Project Chief of Staff"
+  ],
+  "included_skills": [
+    "data-analysis",
+    "content-writing",
+    "competitive-analysis"
+  ],
+  "required_integrations": [],
+  "required_tools": [
+    "llm",
+    "spreadsheet",
+    "crm",
+    "analytics"
+  ],
+  "default_prompts_or_policies": [
+    "先区分商品、渠道、库存、履约和售后环节，再输出运营动作。",
+    "涉及价格、退款、平台政策、供应商承诺和合规 claims 时必须标记人工确认。"
+  ],
+  "compatibility_notes": "适合跨境电商运营排程、商品页优化和订单复盘，不直接代替人工操作店铺后台。",
+  "risk_level": "medium",
+  "acceptance_metrics": [
+    "能把商品页、渠道投放、库存履约和售后复购拆成清晰任务。",
+    "能指出平台政策、供应商承诺和退款相关的人工审批边界。"
+  ],
+  "status": "internal-preview"
+}

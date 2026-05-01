@@ -23,7 +23,11 @@ export interface FounderMainlineE2eAnswer {
     answerText: string;
 }
 
-export type FounderMainlineE2eScenarioKey = 'content-knowledge' | 'saas-ops-automation' | 'local-service-leadgen';
+export type FounderMainlineE2eScenarioKey =
+    | 'content-knowledge'
+    | 'saas-ops-automation'
+    | 'local-service-leadgen'
+    | 'cross-border-ecommerce';
 
 export interface FounderMainlineE2eScenario {
     scenarioKey: FounderMainlineE2eScenarioKey;
@@ -88,6 +92,17 @@ function readScenarioKey(value: string | undefined): FounderMainlineE2eScenarioK
         || normalized === 'cn-local-service-leadgen'
     ) {
         return 'local-service-leadgen';
+    }
+    if (
+        normalized === 'commerce'
+        || normalized === 'ecommerce'
+        || normalized === 'e-commerce'
+        || normalized === 'cross-border'
+        || normalized === 'cross-border-ecommerce'
+        || normalized === 'cross-border-ecommerce-ops'
+        || normalized === 'cn-cross-border-ecommerce-ops'
+    ) {
+        return 'cross-border-ecommerce';
     }
 
     throw new Error(`Unsupported FOUNDER_E2E_SCENARIO: ${value}`);
@@ -316,6 +331,57 @@ function buildLocalServiceLeadgenScenario(runId: string): FounderMainlineE2eScen
     };
 }
 
+function buildCrossBorderEcommerceScenario(runId: string): FounderMainlineE2eScenario {
+    const businessBrief =
+        'Build a cross-border ecommerce operating system for a Shopify, Amazon, and TikTok Shop brand, coordinating product listings, global distribution, inventory, order fulfillment, customer reviews, and repeat purchases.';
+    const answerTextByGroup: Record<FounderMainlineInterviewGroupId, string> = {
+        market_target_users:
+            'Overseas shoppers buying niche lifestyle products through Shopify, Amazon, and TikTok Shop.',
+        core_product_service:
+            'Cross-border ecommerce products, bundles, and seasonal campaigns.',
+        acquisition_distribution_channels:
+            'Shopify storefront, Amazon listings, TikTok Shop, creator content, paid ads, and email remarketing.',
+        conversion_sales_model:
+            'Product listing views to cart conversion, paid orders, customer reviews, and repeat purchases.',
+        delivery_service_model:
+            'Supplier coordination, inventory checks, order fulfillment, customer service, and weekly operations review.',
+        content_language_requirements:
+            'Chinese planning with English product listings, ad copy, and customer replies.',
+        automation_human_boundary:
+            'AI can draft listings, channel variants, review replies, and ops reports; pricing, refunds, supplier commitments, and platform-policy claims need human approval.',
+        team_gap_role_preference:
+            'Product listing operations, channel distribution, inventory fulfillment, after-sales, and repeat purchase follow-up.',
+    };
+
+    return {
+        scenarioKey: 'cross-border-ecommerce',
+        workspaceName: `Founder Workspace ${formatRunIdForWorkspace(runId)}`,
+        businessBrief,
+        coreOffer: 'Cross-border ecommerce products and bundles',
+        acquisitionChannel: 'Shopify + Amazon + TikTok Shop + creators',
+        expectedDraftTexts: [
+            'Scenario rationale',
+            'Matched signals',
+            'cross-border ecommerce',
+            '选品与商品页',
+            '订单售后与复购',
+        ],
+        answers: FOUNDER_MAINLINE_INTERVIEW_FIELDS.map((field) => ({
+            groupId: field.group_id,
+            answerText: answerTextByGroup[field.group_id],
+        })),
+        expectedAgentNames: [
+            'Founder Copilot',
+            'Content Strategy Lead',
+            'Global Distribution Lead',
+            'Project Chief of Staff',
+            'Customer Follow-up Lead',
+        ],
+        minimumRelationshipCount: 1,
+        minimumTriggerCount: 1,
+    };
+}
+
 export function buildFounderMainlineE2eScenario(
     runId: string,
     scenarioKey: FounderMainlineE2eScenarioKey = 'content-knowledge',
@@ -325,6 +391,9 @@ export function buildFounderMainlineE2eScenario(
     }
     if (scenarioKey === 'local-service-leadgen') {
         return buildLocalServiceLeadgenScenario(runId);
+    }
+    if (scenarioKey === 'cross-border-ecommerce') {
+        return buildCrossBorderEcommerceScenario(runId);
     }
 
     return buildContentKnowledgeScenario(runId);

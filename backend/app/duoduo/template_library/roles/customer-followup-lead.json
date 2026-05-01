@@ -6,7 +6,10 @@
   "role_type": "operations",
   "primary_goal": "归类用户反馈、沉淀 FAQ、推动高优先级线索跟进。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "business_stage": [
     "1-10"

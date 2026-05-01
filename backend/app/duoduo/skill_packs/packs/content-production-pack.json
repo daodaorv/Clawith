@@ -5,7 +5,10 @@
   "display_name_en": "Content Production Pack",
   "business_goal": "完成选题、资料整理、结构化写作与内容初稿生成。",
   "applicable_scenarios": [
-    "cn-team-global-content-knowledge"
+    "cn-team-global-content-knowledge",
+    "cn-saas-ops-automation",
+    "cn-local-service-leadgen",
+    "cn-cross-border-ecommerce-ops"
   ],
   "recommended_roles": [
     "Content Strategy Lead",

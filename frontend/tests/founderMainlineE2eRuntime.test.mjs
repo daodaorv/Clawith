@@ -55,6 +55,9 @@ assert.equal(localServiceConfig.scenarioKey, 'local-service-leadgen');
 const saasOpsConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'saas' });
 assert.equal(saasOpsConfig.scenarioKey, 'saas-ops-automation');
 
+const ecommerceConfig = buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'cross-border-ecommerce' });
+assert.equal(ecommerceConfig.scenarioKey, 'cross-border-ecommerce');
+
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_EMAIL: 'founder@example.com' }), /provided together/);
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_PASSWORD: 'OpenClaw!12345' }), /provided together/);
 assert.throws(() => buildFounderMainlineE2eConfig({ FOUNDER_E2E_SCENARIO: 'unknown-scenario' }), /Unsupported/);
@@ -86,5 +89,12 @@ assert.match(saasOpsScenario.businessBrief, /SaaS/i);
 assert.match(saasOpsScenario.coreOffer, /SaaS/i);
 assert.ok(saasOpsScenario.expectedAgentNames.includes('Project Chief of Staff'));
 assert.ok(saasOpsScenario.expectedDraftTexts.includes('客户成功'));
+
+const ecommerceScenario = buildFounderMainlineE2eScenario('2026-04-24T19-40-00-000Z', 'cross-border-ecommerce');
+assert.equal(ecommerceScenario.scenarioKey, 'cross-border-ecommerce');
+assert.match(ecommerceScenario.businessBrief, /cross-border ecommerce/i);
+assert.match(ecommerceScenario.coreOffer, /ecommerce/i);
+assert.ok(ecommerceScenario.expectedAgentNames.includes('Global Distribution Lead'));
+assert.ok(ecommerceScenario.expectedDraftTexts.includes('cross-border ecommerce'));
 
 console.log('founderMainlineE2eRuntime tests passed');
