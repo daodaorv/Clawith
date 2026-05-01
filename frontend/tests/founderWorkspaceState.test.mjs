@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 
-import {
+import * as founderWorkspaceService from '../src/services/founderWorkspace.ts';
+
+const {
     deriveFounderWorkspaceStep,
     resolveFounderWorkspaceSelection,
-} from '../src/services/founderWorkspace.ts';
+} = founderWorkspaceService;
 
 assert.equal(
     deriveFounderWorkspaceStep({
@@ -102,6 +104,22 @@ assert.equal(
         },
     )?.id,
     'workspace-1',
+);
+
+assert.equal(
+    founderWorkspaceService.formatFounderWorkspaceBusinessLogic?.({
+        offer: 'Appointment-based local service packages',
+        channel: 'Local short video + referrals + private traffic',
+        _founder_runtime: { scenario: 'local-service-leadgen' },
+    }),
+    'offer: Appointment-based local service packages | channel: Local short video + referrals + private traffic',
+);
+
+assert.equal(
+    founderWorkspaceService.formatFounderWorkspaceBusinessLogic?.({
+        _founder_runtime: { scenario: 'local-service-leadgen' },
+    }),
+    'N/A',
 );
 
 console.log('founderWorkspaceState tests passed');

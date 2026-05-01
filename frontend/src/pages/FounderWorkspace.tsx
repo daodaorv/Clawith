@@ -18,6 +18,7 @@ import {
 import {
     buildFounderWorkspaceAnswerMap,
     deriveFounderWorkspaceStep,
+    formatFounderWorkspaceBusinessLogic,
     founderWorkspaceApi,
     loadFounderActiveWorkspaceId,
     resolveFounderWorkspaceSelection,
@@ -42,17 +43,6 @@ function getStepLabel(step: ReturnType<typeof deriveFounderWorkspaceStep>, isChi
     if (step === 'dashboard') return 'Operating dashboard';
     if (step === 'review') return 'Plan review';
     return 'Intake';
-}
-
-function renderBusinessLogic(value: unknown) {
-    if (!value || typeof value !== 'object') {
-        return 'N/A';
-    }
-
-    return Object.entries(value as Record<string, unknown>)
-        .filter(([, item]) => Boolean(item))
-        .map(([key, item]) => `${key}: ${String(item)}`)
-        .join(' | ');
 }
 
 function getModelProvider(model: any): string {
@@ -1109,7 +1099,7 @@ function WorkspaceCard({
                 <strong style={{ color: 'var(--text-primary)' }}>
                     {isChinese ? '业务逻辑' : 'Business logic'}
                 </strong>
-                <span> · {renderBusinessLogic(workspace.business_logic)}</span>
+                <span> · {formatFounderWorkspaceBusinessLogic(workspace.business_logic)}</span>
             </div>
         </div>
     );

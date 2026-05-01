@@ -157,6 +157,31 @@ export function resolveFounderWorkspaceSelection<T extends { id: string }>(
     return workspaces[0] || options.fallbackWorkspace || null;
 }
 
+export function formatFounderWorkspaceBusinessLogic(value: unknown): string {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 'N/A';
+    }
+
+    const parts = Object.entries(value as Record<string, unknown>).flatMap(([key, item]) => {
+        if (!key || key.startsWith('_') || item === null || item === undefined) {
+            return [];
+        }
+
+        if (typeof item === 'string') {
+            const trimmed = item.trim();
+            return trimmed ? [`${key}: ${trimmed}`] : [];
+        }
+
+        if (typeof item === 'number' || typeof item === 'boolean') {
+            return [`${key}: ${String(item)}`];
+        }
+
+        return [];
+    });
+
+    return parts.length ? parts.join(' | ') : 'N/A';
+}
+
 export function loadFounderActiveWorkspaceId(): string {
     if (typeof window === 'undefined') {
         return '';
