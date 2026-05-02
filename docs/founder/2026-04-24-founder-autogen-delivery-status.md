@@ -232,7 +232,7 @@ Manual GitHub Actions live gate:
 - Optional input:
   - `scenario` = `content-knowledge`, `saas-ops-automation`, `local-service-leadgen`, or `cross-border-ecommerce`
 - If credentials are omitted, the workflow uses the self-bootstrap path and cleanup remains enabled unless the manual `skip_cleanup` input is set.
-- Screenshots are uploaded as the `founder-live-e2e-screenshots` artifact.
+- Screenshots and the generated walkthrough markdown are uploaded as the `founder-live-e2e-screenshots` artifact.
 
 Scenario coverage:
 

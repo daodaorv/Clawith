@@ -76,5 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: founder-live-e2e-screenshots
-          path: output/playwright/*.png
+          path: |
+            output/playwright/*.png
+            output/playwright/*.md
           if-no-files-found: ignore

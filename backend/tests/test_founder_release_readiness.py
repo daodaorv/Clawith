@@ -7,6 +7,8 @@ from app.scripts.founder_release_readiness import (
     discover_founder_ruff_targets,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _touch(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,3 +84,13 @@ def test_build_founder_release_readiness_steps_adds_live_gate_only_when_requeste
         "Frontend build",
         "Frontend live founder E2E",
     ]
+
+
+def test_founder_live_e2e_workflow_uploads_screenshots_and_walkthrough():
+    workflow_text = (REPO_ROOT / ".github" / "workflows" / "founder-live-e2e.yml").read_text(
+        encoding="utf-8",
+    )
+
+    assert "founder-live-e2e-screenshots" in workflow_text
+    assert "output/playwright/*.png" in workflow_text
+    assert "output/playwright/*.md" in workflow_text

@@ -232,7 +232,7 @@ Dashboard 上确认出现的 4 个 agent：
 - 可选输入：
   - `scenario` = `content-knowledge`、`saas-ops-automation`、`local-service-leadgen` 或 `cross-border-ecommerce`
 - 如果不提供凭据，workflow 会走 self-bootstrap 路径；除非手动勾选 `skip_cleanup`，否则默认会清理自举产物。
-- 截图会作为 `founder-live-e2e-screenshots` artifact 上传。
+- 截图和自动生成的走查 markdown 会作为 `founder-live-e2e-screenshots` artifact 上传。
 
 当前场景覆盖：
 
